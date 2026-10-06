@@ -5,21 +5,21 @@
 
 [![Tests](https://img.shields.io/badge/tests-52%20passed-58cba8.svg)](#quality-gate--verification)
 [![Canton Live](https://img.shields.io/badge/Canton%20LocalNet-Live%20Participant-58cba8.svg)](#canton--daml-architecture)
-[![Token Standard](https://img.shields.io/badge/CIP--56-HoldingV1%20Compatible-38bdf8.svg)](#level-c--cip-56-holding-compatible-token-settlement)
-[![AI Engine](https://img.shields.io/badge/Scout%20AI-Groq%20%7C%20Llama--3.3--70b-eab308.svg)](#scout-ai--evidence-backed-work-discovery)
+[![Token Standard](https://img.shields.io/badge/CIP--56-HoldingV1%20Compatible-38bdf8.svg)](#b-cip-56-holding-compatible-token-settlement)
+[![AI Engine](https://img.shields.io/badge/Scout%20AI-Groq%20%7C%20Llama--3.3--70b-eab308.svg)](#a-scout-ai--evidence-backed-codebase-scout)
 
 ---
 
 ## What is MergeMint?
 
-**MergeMint** is an open-source bounty protocol that connects GitHub software development with atomic smart-contract escrow on the **Canton Network**. It enables sponsors to fund specific engineering tasks, maintainers to enforce quality gates, and contributors to receive real tokenized payments upon approved delivery.
+**MergeMint** is an open-source bounty protocol that connects GitHub software development with on-ledger escrow on the **Canton Network**. It enables sponsors to fund specific engineering tasks, maintainers to enforce quality gates, and contributors to receive real tokenized payments upon approved delivery.
 
 ### Why It Matters
 
 Traditional open-source bounty platforms suffer from three fatal flaws:
 1. **Ambiguous Tasks**: Bounties are created with vague requirements, leaving contributors guessing and maintainers reviewing irrelevant PRs.
 2. **Review Bait-and-Switch**: Escrows pay out based on branch names or PR links. If a contributor pushes broken or malicious commits after an initial review, unpinned platforms still pay out.
-3. **Simulated Payouts**: Most hackathon projects simulate transfers or rely on off-chain admin databases rather than standard token contracts on a privacy-preserving ledger.
+3. **Simulated Payouts**: Most hackathon projects simulate transfers or rely on off-chain admin databases rather than standard token contracts on a Canton participant ledger.
 
 **MergeMint solves all three:**
 - **Evidence-Backed Tasks**: Scout AI inspects actual repository source code and tests to propose grounded, fundable bounties with precise acceptance criteria.
@@ -116,7 +116,7 @@ MergeMint connects GitHub repository work with atomic Canton token escrow. Below
 - **Engine Transparency**: Unmistakable engine badge (`✦ Groq AI` vs `⚠ Heuristic fallback`). Never silently misrepresents fallback logic.
 - **Maintainer Authority Invariant**: Scout proposes only. It never unilaterally creates GitHub issues or locks escrow funds.
 
-### B. Level C — CIP-56 Holding-Compatible Token Settlement
+### B. CIP-56 Holding-Compatible Token Settlement
 - **Official Interface**: Implements the official Splice Holding interface:
   ```daml
   package Splice.Api.Token.HoldingV1 (718a0f...);

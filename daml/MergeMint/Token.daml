@@ -1,0 +1,83 @@
+module MergeMint.Token where
+
+import Splice.Api.Token.HoldingV1 as HoldingV1
+import Splice.Api.Token.MetadataV1 as MetadataV1
+
+-- | MergeMint CIP-56 Fungible Token Holding.
+-- Implements Splice.Api.Token.HoldingV1.Holding interface directly.
+template MergeMintHolding
+  with
+    admin : Party
+    owner : Party
+    instrument : Text
+    amount : Decimal
+    lock : Optional HoldingV1.Lock
+  where
+    signatory admin
+    observer owner
+
+    ensure amount > 0.0 && instrument /= ""
+
+    -- | Direct transfer choice moving holding to a new owner
+    choice Transfer : ContractId MergeMintHolding
+      with
+        newOwner : Party
+      controller owner
+      do
+        assertMsg "Holding is locked" (lock == None)
+        create this with
+          owner = newOwner
+
+    -- | Lock choice for bounty escrow
+    choice LockForBounty : ContractId MergeMintHolding
+      with
+        locker : Party
+        contextText : Text
+      controller owner
+      do
+        assertMsg "Holding already locked" (lock == None)
+        create this with
+          lock = Some HoldingV1.Lock with
+            holders = [locker]
+            expiresAt = None
+            expiresAfter = None
+            context = Some contextText
+
+    -- | Settle lock choice: releases and transfers locked holding to contributor
+    choice SettleLocked : ContractId MergeMintHolding
+      with
+        recipient : Party
+        authorizedBy : Party
+      controller authorizedBy
+      do
+        case lock of
+          None -> abort "Holding is not locked"
+          Some l -> do
+            assertMsg "Unauthorized lock settler" (authorizedBy `elem` l.holders)
+            create this with
+              owner = recipient
+              lock = None
+
+    -- | Unlock/refund choice: returns locked holding back to sponsor
+    choice Unlock : ContractId MergeMintHolding
+      with
+        authorizedBy : Party
+      controller authorizedBy
+      do
+        case lock of
+          None -> abort "Holding is not locked"
+          Some l -> do
+            assertMsg "Unauthorized unlocker" (authorizedBy `elem` l.holders)
+            create this with
+              lock = None
+
+    -- | Splice / CIP-56 Holding Interface Implementation!
+    interface instance HoldingV1.Holding for MergeMintHolding where
+      view = HoldingV1.HoldingView with
+        owner = owner
+        instrumentId = HoldingV1.InstrumentId with
+          admin = admin
+          id = instrument
+        amount = amount
+        lock = lock
+        meta = MetadataV1.emptyMetadata

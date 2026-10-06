@@ -1,0 +1,5 @@
+module MergeMint.Test where
+
+-- Stub module to satisfy Canton package upgrade compatibility with v0.1.0
+testStub : Text
+testStub = "MergeMint.Test v0.2.0 compatibility stub"

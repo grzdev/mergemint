@@ -3,10 +3,54 @@
 > **Decentralized Bounty Escrow & Work Verification Protocol on Canton Network**  
 > Move tokenized value on Canton from open-source sponsors to contributors upon verified GitHub pull request delivery, protected by exact-commit revision pinning and CIP-56 Holding-compatible token settlement.
 
-[![Tests](https://img.shields.io/badge/tests-52%20passed-58cba8.svg)](#quality-gate)
+[![Tests](https://img.shields.io/badge/tests-52%20passed-58cba8.svg)](#quality-gate--verification)
 [![Canton Live](https://img.shields.io/badge/Canton%20LocalNet-Live%20Participant-58cba8.svg)](#canton--daml-architecture)
-[![Token Standard](https://img.shields.io/badge/CIP--56-HoldingV1%20Compatible-38bdf8.svg)](#level-c--cip-56-holding-compatible-token-standard)
-[![AI Engine](https://img.shields.io/badge/Scout%20AI-Groq%20%7C%20Llama--3.3--70b-eab308.svg)](#scout-ai-autonomous-codebase-scout)
+[![Token Standard](https://img.shields.io/badge/CIP--56-HoldingV1%20Compatible-38bdf8.svg)](#level-c--cip-56-holding-compatible-token-settlement)
+[![AI Engine](https://img.shields.io/badge/Scout%20AI-Groq%20%7C%20Llama--3.3--70b-eab308.svg)](#scout-ai--evidence-backed-work-discovery)
+
+---
+
+## What is MergeMint?
+
+**MergeMint** is an open-source bounty protocol that connects GitHub software development with atomic smart-contract escrow on the **Canton Network**. It enables sponsors to fund specific engineering tasks, maintainers to enforce quality gates, and contributors to receive real tokenized payments upon approved delivery.
+
+### Why It Matters
+
+Traditional open-source bounty platforms suffer from three fatal flaws:
+1. **Ambiguous Tasks**: Bounties are created with vague requirements, leaving contributors guessing and maintainers reviewing irrelevant PRs.
+2. **Review Bait-and-Switch**: Escrows pay out based on branch names or PR links. If a contributor pushes broken or malicious commits after an initial review, unpinned platforms still pay out.
+3. **Simulated Payouts**: Most hackathon projects simulate transfers or rely on off-chain admin databases rather than standard token contracts on a privacy-preserving ledger.
+
+**MergeMint solves all three:**
+- **Evidence-Backed Tasks**: Scout AI inspects actual repository source code and tests to propose grounded, fundable bounties with precise acceptance criteria.
+- **Exact-Commit Revision Pinning**: Contracts cryptographically bind the exact head commit SHA (`git rev-parse`). Any subsequent commit invalidates prior approvals and halts settlement.
+- **CIP-56 Holding-Compatible Settlement**: Funds are locked as `Splice.Api.Token.HoldingV1.Holding`-compatible tokens on a live Canton participant ledger and atomically transferred upon maintainer authorization.
+
+---
+
+## The 5-Step Lifecycle Flow
+
+```
+┌─────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
+│      1. Scout AI        │       │  2. Canton Escrow      │       │  3. Revision Pinning   │
+│ Inspects code, manifest │       │ Locks a HoldingV1-     │       │ Binds exact PR commit  │
+│ & tests via Groq LLM    ├──────►│ compatible MMT holding ├──────►│ SHA + verifies CI test │
+│ Proposes fundable tasks │       │ on Canton LocalNet     │       │ runs before approval   │
+└─────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
+                                                                               │
+                                                                               ▼
+                                  ┌────────────────────────┐       ┌────────────────────────┐
+                                  │   5. CIP-56 Settlement │       │  4. Maintainer Review  │
+                                  │ Atomic token transfer  │◄──────┤ Authorizes completion  │
+                                  │ to contributor holding │       │ for exact revision     │
+                                  └────────────────────────┘       └────────────────────────┘
+```
+
+1. **Scout AI Discovery**: Server-side LLM inspects repository tree, manifests, and targeted source files to propose fundable opportunities backed by codebase evidence.
+2. **Canton Escrow**: Sponsor funds the bounty, locking MergeMint Tokens (MMT) into a Daml escrow contract on Canton LocalNet.
+3. **Claim & Revision Pinning**: Contributor links their GitHub PR. MergeMint pulls real CI check runs and binds the exact head commit SHA.
+4. **Maintainer Authorization**: Maintainer reviews the PR and approves the exact commit revision. Pushing new commits immediately resets approval back to `SUBMITTED`.
+5. **CIP-56 Holding-Compatible Settlement**: Daml contract exercises atomic settlement on Canton, transferring the locked token holding directly to the contributor party.
 
 ---
 
@@ -14,7 +58,7 @@
 
 MergeMint connects GitHub repository work with atomic Canton token escrow. Below are the key stages of the protocol in action:
 
-### 1. Scout AI · Autonomous Work Discovery
+### 1. Scout AI · Evidence-Backed Work Discovery
 *Scout analyzes repository code architecture, missing retry logic, token interfaces, and tests to propose actionable fundable work with source evidence and acceptance criteria.*
 ![Scout AI Discovery](docs/screenshots/01_scout_discovery.png)
 
@@ -38,7 +82,7 @@ MergeMint connects GitHub repository work with atomic Canton token escrow. Below
 
 ---
 
-### 5. Step 4: Review & Fund on Canton
+### 5. Step 4: Review & Fund on Canton Escrow
 *Pre-flight summary before locking token holdings in on-chain escrow on Canton LocalNet.*
 ![Review & Fund](docs/screenshots/05_fund_canton_escrow.png)
 
@@ -56,31 +100,15 @@ MergeMint connects GitHub repository work with atomic Canton token escrow. Below
 
 ---
 
-### 8. Canton Settlement Receipt & CIP-56 Token Transfer
+### 8. Canton Settlement Receipt & CIP-56 Holding-Compatible Settlement
 *Atomic settlement releases locked tokens directly to the contributor holding contract on the Canton participant ledger.*
 ![Canton Settlement Receipt](docs/screenshots/08_canton_settlement_receipt.png)
 
 ---
 
-## Core Pillars & Architectural Story
+## Core Pillars & Architecture
 
-```
-┌─────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
-│      1. Scout AI        │       │  2. Canton Escrow      │       │  3. Revision Pinning   │
-│ Inspects code, manifest │       │ Locks CIP-56 token     │       │ Binds exact PR commit  │
-│ & tests via Groq LLM    ├──────►│ holdings in Daml       ├──────►│ SHA + verifies CI test │
-│ Proposes fundable tasks │       │ contract on LocalNet   │       │ runs before approval   │
-└─────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
-                                                                               │
-                                                                               ▼
-                                  ┌────────────────────────┐       ┌────────────────────────┐
-                                  │   5. CIP-56 Settlement │       │  4. Maintainer Review  │
-                                  │ Atomic token transfer  │◄──────┤ Authorizes completion  │
-                                  │ to contributor holding │       │ for exact revision     │
-                                  └────────────────────────┘       └────────────────────────┘
-```
-
-### A. Scout AI Autonomous Codebase Scout
+### A. Scout AI · Evidence-Backed Codebase Scout
 - **Targeted Bounded Analysis**: Inspects repository tree, manifest files, README excerpts, and 3–5 targeted code files (source, error handling, tests, config) bounded to <12 KB for sub-second latency.
 - **Provider**: Server-side Groq Cloud API powered by `llama-3.3-70b-versatile` in JSON mode.
 - **Evidence-Backed**: Every proposal includes specific file paths, module name, and trigger reason (e.g., *"Direct HTTP fetch calls without exponential backoff"*).
@@ -140,7 +168,8 @@ GITHUB_INTEGRATION_MODE=real
 GITHUB_APP_ID=your_github_app_id
 GITHUB_CLIENT_ID=your_client_id
 GITHUB_CLIENT_SECRET=your_client_secret
-GITHUB_PRIVATE_KEY="-----BEGIN RSA PRIVATE KEY-----\n...\n-----END RSA PRIVATE KEY-----"
+# Path to downloaded private key PEM (recommended) or inline GITHUB_PRIVATE_KEY
+GITHUB_PRIVATE_KEY_PATH=secrets/your-app.private-key.pem
 GITHUB_APP_SLUG=your-app-slug
 NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
 SESSION_SECRET=your_random_32_char_secret
@@ -149,10 +178,15 @@ SESSION_SECRET=your_random_32_char_secret
 CANTON_INTEGRATION_MODE=real
 CANTON_LEDGER_API_URL=http://127.0.0.1:7575
 CANTON_NETWORK="Canton LocalNet"
-CANTON_PACKAGE_ID=396bbb895702f963211ab2a69a2b74b53170e513876978af6ddfc7636c217258
-CANTON_SPONSOR_PARTY=sponsor::12209fb2602be0c2088b9fec48802b55fd39a3413090f039c0dfbfe382e783854c0b
-CANTON_MAINTAINER_PARTY=maintainer::12209fb2602be0c2088b9fec48802b55fd39a3413090f039c0dfbfe382e783854c0b
-CANTON_CONTRIBUTOR_PARTY=contributor::12209fb2602be0c2088b9fec48802b55fd39a3413090f039c0dfbfe382e783854c0b
+
+# Package ID uploaded to Canton participant (e.g. from daml build & daml ledger upload-dar)
+CANTON_PACKAGE_ID=<your_uploaded_mergemint_package_id>
+
+# Daml Party IDs allocated on the participant
+# (Note: In-memory Canton LocalNet allocates fresh participant namespaces per session)
+CANTON_SPONSOR_PARTY=sponsor::<participant_namespace>
+CANTON_MAINTAINER_PARTY=maintainer::<participant_namespace>
+CANTON_CONTRIBUTOR_PARTY=contributor::<participant_namespace>
 
 # --- Scout AI Configuration ---
 GROQ_API_KEY=gsk_your_groq_api_key_here

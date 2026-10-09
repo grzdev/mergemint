@@ -20,7 +20,7 @@ import {
 import { CreateBountyFlow } from './createBountyFlow';
 import { Drawer } from '@/components/ui/drawer';
 import { Modal } from '@/components/ui/modal';
-import { truncateHash } from '@/utils/formatters';
+import { truncateHash, sumTokenAmounts } from '@/utils/formatters';
 
 const labels: Record<string, string> = {
   DRAFT: 'Draft',
@@ -118,7 +118,7 @@ export function Dashboard() {
   // --- Local UI State (isolated from background remote refetches) ---
   const [bounties, setBounties] = useState<Bounty[]>(seeds);
   const [repo, setRepo] = useState<string>('ALL');
-  const [page, setPage] = useState('Dashboard');
+  const [page, setPage] = useState('Bounties');
   const [selected, setSelected] = useState<string | null>(() => {
     if (typeof window !== 'undefined') {
       const p = new URLSearchParams(window.location.search);
@@ -288,9 +288,10 @@ export function Dashboard() {
     try {
       await fetch('/api/github/auth/logout', { method: 'POST' });
       await authQuery.refetch();
-      setMessage('Disconnected from GitHub.');
+      await reposQuery.refetch();
+      setMessage('Signed out of GitHub.');
     } catch {
-      setError('Failed to disconnect from GitHub.');
+      setError('Failed to sign out of GitHub.');
     }
   };
 
@@ -320,10 +321,7 @@ export function Dashboard() {
   // Compute stats
   const activeBountiesCount = list.filter(b => !['DRAFT', 'SETTLED'].includes(b.status)).length;
   const pendingReviewsCount = list.filter(b => b.status === 'SUBMITTED').length;
-  const totalFundedMMT = list
-    .filter(b => !['DRAFT'].includes(b.status))
-    .reduce((sum, b) => sum + BigInt(b.amount), BigInt(0))
-    .toString();
+  const totalFundedMMT = sumTokenAmounts(list.filter(b => b.status !== 'DRAFT').map(b => b.amount));
 
   // Actionable items for "Needs your attention"
   const actionableItems = list.filter(b => ['SUBMITTED', 'APPROVED', 'CLAIMED'].includes(b.status));
@@ -386,7 +384,7 @@ export function Dashboard() {
           </div>
         </div>
         <nav aria-label="Main navigation">
-          {['Dashboard', 'Bounties', 'Activity'].map((name, i) => (
+          {['Bounties', 'Activity'].map((name, i) => (
             <button
               key={name}
               className={page === name && !creating ? 'nav-active' : ''}
@@ -396,7 +394,7 @@ export function Dashboard() {
                 setCreating(false);
               }}
             >
-              <span aria-hidden="true">{['◫', '◇', '≋'][i]}</span>
+              <span aria-hidden="true">{['◇', '≋'][i]}</span>
               {name}
               {name === 'Bounties' && <small>{list.length}</small>}
             </button>
@@ -424,13 +422,20 @@ export function Dashboard() {
               <div className="connection">
                 <span style={{ color: 'var(--mint)' }}>●</span> Connected as @{authStatus.user.login}
               </div>
+              <button
+                className="secondary"
+                style={{ width: '100%', marginTop: '6px', fontSize: '11px' }}
+                onClick={handleDisconnect}
+              >
+                Sign out of GitHub
+              </button>
               {!authStatus.installed && authStatus.installUrl && (
                 <a
                   href={authStatus.installUrl}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="text-button"
-                  style={{ display: 'block', padding: '4px 7px', fontSize: '11px', color: 'var(--mint)' }}
+                  style={{ display: 'block', padding: '4px 7px', fontSize: '11px', color: 'var(--mint)', marginTop: '4px' }}
                 >
                   + Install App on repos ↗
                 </a>
@@ -501,7 +506,7 @@ export function Dashboard() {
                   style={{ marginTop: '8px', width: '100%', fontSize: '10px' }}
                   onClick={handleDisconnect}
                 >
-                  Disconnect GitHub
+                  Sign out of GitHub
                 </button>
               )}
               <button
@@ -522,11 +527,32 @@ export function Dashboard() {
                 style={{ objectFit: 'cover' }}
               />
             ) : (
-              <Avatar name={authStatus.user?.name || authStatus.user?.login || 'Alex Morgan'} />
+              <Avatar name={authStatus.user?.name || authStatus.user?.login || (authStatus.mode === 'real' ? 'GitHub' : 'Alex Morgan')} />
             )}
-            <div>
-              {authStatus.user?.name || (authStatus.user ? `@${authStatus.user.login}` : 'Alex Morgan')}
-              <small>@{authStatus.user?.login || 'alexmorgan'}</small>
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div style={{ textOverflow: 'ellipsis', overflow: 'hidden', whiteSpace: 'nowrap' }}>
+                {authStatus.user?.name || (authStatus.user ? `@${authStatus.user.login}` : authStatus.mode === 'real' ? 'Not signed in' : 'Alex Morgan')}
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '6px' }}>
+                <small>@{authStatus.user?.login || (authStatus.mode === 'real' ? 'disconnected' : 'alexmorgan')}</small>
+                {authStatus.mode === 'real' && authStatus.connected && (
+                  <button
+                    onClick={handleDisconnect}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      padding: 0,
+                      color: 'var(--muted)',
+                      textDecoration: 'underline',
+                      cursor: 'pointer',
+                      fontSize: '10px',
+                    }}
+                    title="Sign out of personal GitHub"
+                  >
+                    Sign out
+                  </button>
+                )}
+              </div>
             </div>
           </div>
         </div>
@@ -1511,9 +1537,7 @@ export function Dashboard() {
                   <h1>
                     {page === 'Activity'
                       ? 'Every step, accounted for.'
-                      : page === 'Bounties'
-                        ? 'Your funded work.'
-                        : 'Move good work forward.'}
+                      : 'Your funded work.'}
                   </h1>
                   <p>From open issue to rewarded contribution. One connected workflow.</p>
                 </div>
@@ -1617,7 +1641,7 @@ export function Dashboard() {
               ) : (
                 <>
                   {/* Needs Your Attention Section */}
-                  {actionableItems.length > 0 && page === 'Dashboard' && (
+                  {actionableItems.length > 0 && page === 'Bounties' && (
                     <section className="needs-attention-section">
                       <div className="section-title">
                         <h2>Needs your attention</h2>

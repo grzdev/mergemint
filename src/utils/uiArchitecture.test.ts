@@ -1,6 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { truncateHash, formatTimeAgo } from './formatters';
+import { truncateHash, formatTimeAgo, sumTokenAmounts } from './formatters';
 import { transition, type Bounty } from '../domain/bounty';
 
 test('truncateHash formats long cryptographic hashes predictably', () => {
@@ -113,4 +113,12 @@ test('Replacing or updating PR commit SHA invalidates prior approval and returns
   assert.equal(resetBounty.status, 'SUBMITTED');
   assert.equal(resetBounty.approval, undefined);
   assert.equal(resetBounty.submission?.sha, 'sha-version-2');
+});
+
+test('dashboard totals preserve fractional ledger values without BigInt conversion errors', () => {
+  assert.equal(sumTokenAmounts(Array(6).fill('12.3456789012')), '74.0740734072');
+  assert.equal(sumTokenAmounts(['0.9999999999', '0.0000000001']), '1');
+  assert.equal(sumTokenAmounts(['9007199254740993', '0.0000000001']), '9007199254740993.0000000001');
+  assert.equal(sumTokenAmounts([]), '0');
+  assert.equal(sumTokenAmounts(['invalid']), 'Unavailable');
 });

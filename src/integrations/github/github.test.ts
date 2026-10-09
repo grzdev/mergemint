@@ -12,6 +12,8 @@ import { isMockRepo, MOCK_REPOSITORIES } from './types';
 import { mockGithub } from './mock';
 import { parsePrInput } from '@/app/api/github/pull-request/route';
 import { GET as getIssuesRoute } from '@/app/api/github/issues/route';
+import { POST as logoutPost, GET as logoutGet } from '@/app/api/github/auth/logout/route';
+import { SESSION_COOKIE_NAME } from './server/session';
 import { transition } from '@/domain/bounty';
 import { seeds } from '@/mocks/seed';
 import type { Bounty, Submission } from '@/domain/bounty';
@@ -602,5 +604,26 @@ test('real repository issues payload correctly maps genuine issues and filters P
   assert.equal(mapped[0].title, 'Real Bug: Null pointer in settlement validation');
   assert.equal(mapped[0].author, 'contributor-dev');
   assert.deepEqual(mapped[0].labels, ['bug']);
+});
+
+// 15. GitHub auth logout clears session cookie on both POST and GET
+test('logout endpoint clears session cookie and revokes auth status', async () => {
+  const postRes = await logoutPost();
+  assert.equal(postRes.status, 200);
+  const postJson = await postRes.json();
+  assert.equal(postJson.success, true);
+  assert.equal(postJson.connected, false);
+
+  const postCookie = postRes.cookies.get(SESSION_COOKIE_NAME);
+  assert.ok(postCookie);
+  assert.equal(postCookie.value, '');
+  assert.equal(postCookie.maxAge, 0);
+
+  const getRes = await logoutGet(new Request('http://127.0.0.1:3000/api/github/auth/logout'));
+  assert.equal(getRes.status, 307);
+  const getCookie = getRes.cookies.get(SESSION_COOKIE_NAME);
+  assert.ok(getCookie);
+  assert.equal(getCookie.value, '');
+  assert.equal(getCookie.maxAge, 0);
 });
 

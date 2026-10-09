@@ -17,3 +17,16 @@ export function formatTimeAgo(dateString?: string): string {
   const diffDays = Math.floor(diffHours / 24);
   return `${diffDays}d ago`;
 }
+
+// Daml Decimal has 10 fractional digits; scale before using integer arithmetic.
+export function sumTokenAmounts(amounts: string[]): string {
+  const scale = BigInt('10000000000');
+  let total = BigInt(0);
+  for (const amount of amounts) {
+    if (!/^\d+(\.\d{1,10})?$/.test(amount)) return 'Unavailable';
+    const [whole, fraction = ''] = amount.split('.');
+    total += BigInt(whole) * scale + BigInt(fraction.padEnd(10, '0'));
+  }
+  const fraction = (total % scale).toString().padStart(10, '0').replace(/0+$/, '');
+  return (total / scale).toString() + (fraction ? '.' + fraction : '');
+}

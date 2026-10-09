@@ -20,6 +20,8 @@ import {
 import { CreateBountyFlow } from './createBountyFlow';
 import { Drawer } from '@/components/ui/drawer';
 import { Modal } from '@/components/ui/modal';
+import { ScoutDrawer } from '@/features/scout/scoutDrawer';
+import type { ScoutAnalysisResult, ScoutOpportunity } from '@/domain/scout';
 import { truncateHash, sumTokenAmounts } from '@/utils/formatters';
 
 const labels: Record<string, string> = {
@@ -164,6 +166,12 @@ export function Dashboard() {
   // Local Drawer states
   const [evidenceDrawerOpen, setEvidenceDrawerOpen] = useState(false);
   const [receiptDrawerOpen, setReceiptDrawerOpen] = useState(false);
+  const [scoutDrawerOpen, setScoutDrawerOpen] = useState(false);
+  const [scoutRepo, setScoutRepo] = useState<string>('');
+  const [scoutResult, setScoutResult] = useState<ScoutAnalysisResult | null>(null);
+  const [scoutLoading, setScoutLoading] = useState(false);
+  const [scoutError, setScoutError] = useState('');
+  const [scoutOpportunity, setScoutOpportunity] = useState<ScoutOpportunity | null>(null);
 
   // Local Modal states
   const [modalAction, setModalAction] = useState<'fund' | 'claim' | 'approve' | 'settle' | null>(null);
@@ -308,6 +316,38 @@ export function Dashboard() {
       setMessage(`PR #${submission.number} successfully linked with commit ${submission.sha.slice(0, 10)}.`);
       return updated;
     });
+  };
+
+  const handleRunDashboardScout = async (repoToScan: string) => {
+    if (!repoToScan) return;
+    setScoutLoading(true);
+    setScoutError('');
+    try {
+      const res = await fetch('/api/scout/discover', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ repo: repoToScan, existingIssueCount: bounties.length }),
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Scout discovery failed (${res.status})`);
+      }
+      const data: ScoutAnalysisResult = await res.json();
+      setScoutResult(data);
+    } catch (err) {
+      setScoutError(err instanceof Error ? err.message : 'Scout failed to analyze repository.');
+    } finally {
+      setScoutLoading(false);
+    }
+  };
+
+  const handleSelectOpportunityFromDashboard = (opp: ScoutOpportunity, chosenRepo: string) => {
+    setScoutOpportunity(opp);
+    setScoutRepo(chosenRepo);
+    setRepo(chosenRepo);
+    setCreateStep(2);
+    setCreating(true);
+    setScoutDrawerOpen(false);
   };
 
   const list = repo === 'ALL' || !repo ? bounties : bounties.filter(b => b.repo === repo);
@@ -639,24 +679,28 @@ export function Dashboard() {
           {creating ? (
             <CreateBountyFlow
               initialRepo={
-                authStatus.mode === 'real'
+                scoutRepo ||
+                (authStatus.mode === 'real'
                   ? (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('repo')) ||
-                    (!isMockRepo(repo) && availableRepos.includes(repo) ? repo : availableRepos.find(r => r.includes('patchpilot')) || availableRepos[0])
+                    (!isMockRepo(repo) && availableRepos.includes(repo) ? repo : '')
                   : repo === 'ALL'
-                  ? 'mergemint/core'
-                  : repo
+                  ? ''
+                  : repo)
               }
+              initialOpportunity={scoutOpportunity}
               initialScout={startWithScout}
               initialStep={createStep}
               onCancel={() => {
                 setCreating(false);
                 setStartWithScout(false);
+                setScoutOpportunity(null);
               }}
               onSuccess={newBounty => {
                 setBounties(all => [newBounty, ...all.filter(b => b.id !== newBounty.id)]);
                 setRepo(newBounty.repo);
                 setCreating(false);
                 setStartWithScout(false);
+                setScoutOpportunity(null);
                 setSelected(newBounty.id);
                 setActivity(all => [
                   `Funded ${newBounty.amount} MMT for issue #${newBounty.issue}`,
@@ -1546,8 +1590,12 @@ export function Dashboard() {
                     type="button"
                     className="secondary"
                     onClick={() => {
-                      setStartWithScout(true);
-                      setCreating(true);
+                      const target = repo !== 'ALL' && !isMockRepo(repo) ? repo : '';
+                      setScoutRepo(target);
+                      setScoutDrawerOpen(true);
+                      if (target && (!scoutResult || scoutResult.repo !== target)) {
+                        handleRunDashboardScout(target);
+                      }
                     }}
                     style={{
                       display: 'inline-flex',
@@ -1797,8 +1845,12 @@ export function Dashboard() {
                             type="button"
                             className="secondary"
                             onClick={() => {
-                              setStartWithScout(true);
-                              setCreating(true);
+                              const target = repo !== 'ALL' && !isMockRepo(repo) ? repo : '';
+                              setScoutRepo(target);
+                              setScoutDrawerOpen(true);
+                              if (target && (!scoutResult || scoutResult.repo !== target)) {
+                                handleRunDashboardScout(target);
+                              }
                             }}
                             style={{
                               display: 'inline-flex',
@@ -1850,6 +1902,28 @@ export function Dashboard() {
               )}
             </>
           )}
+
+          {/* Scout AI Discovery Drawer */}
+          <ScoutDrawer
+            isOpen={scoutDrawerOpen}
+            onClose={() => setScoutDrawerOpen(false)}
+            repo={scoutRepo}
+            availableRepos={availableRepos}
+            onSelectRepo={newRepo => {
+              setScoutRepo(newRepo);
+              if (scoutResult && scoutResult.repo !== newRepo) {
+                setScoutResult(null);
+              }
+            }}
+            onRunScan={targetRepo => {
+              handleRunDashboardScout(targetRepo);
+            }}
+            result={scoutResult}
+            loading={scoutLoading}
+            error={scoutError}
+            onRetry={() => handleRunDashboardScout(scoutRepo)}
+            onSelectOpportunity={handleSelectOpportunityFromDashboard}
+          />
 
           {/* Feedback Toast */}
           {(busy || message || error) && (

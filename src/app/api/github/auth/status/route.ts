@@ -41,6 +41,8 @@ export async function GET(request: Request) {
   const session = getSessionFromRequest(request);
   const installUrl = `https://github.com/apps/${cfg.appSlug}/installations/new`;
 
+  if (!session?.token) return NextResponse.json({ mode: 'real', configured: true, connected: false, user: null, installed: false, installUrl });
+
   let installed = false;
   try {
     const repoInfo = await getAccessibleRepositories(session?.token);

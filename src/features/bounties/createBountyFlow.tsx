@@ -20,13 +20,14 @@ interface CreateBountyFlowProps {
   initialRepo?: string;
   initialScout?: boolean;
   initialStep?: 1 | 2 | 3 | 4;
+  initialOpportunity?: ScoutOpportunity | null;
   onCancel: () => void;
   onSuccess: (bounty: Bounty) => void;
 }
 
-export function CreateBountyFlow({ initialRepo, initialScout, initialStep, onCancel, onSuccess }: CreateBountyFlowProps) {
+export function CreateBountyFlow({ initialRepo, initialScout, initialStep, initialOpportunity, onCancel, onSuccess }: CreateBountyFlowProps) {
   // Stepper state: 1: Repo, 2: Issue, 3: Terms, 4: Fund
-  const [step, setStep] = useState<1 | 2 | 3 | 4>(initialStep || 1);
+  const [step, setStep] = useState<1 | 2 | 3 | 4>(initialStep || (initialOpportunity ? 2 : 1));
 
   // Repositories state
   const [repos, setRepos] = useState<GitHubRepo[]>([]);
@@ -46,7 +47,7 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, onCan
   const [selectedIssue, setSelectedIssue] = useState<GitHubIssue | null>(null);
 
   // Terms state
-  const [amount, setAmount] = useState<string>('500');
+  const [amount, setAmount] = useState<string>(initialOpportunity?.suggestedAmount || '500');
   const [sponsor, setSponsor] = useState<Party>({
     handle: 'mergemint-labs',
     partyId: 'sponsor::demo-labs',
@@ -55,13 +56,19 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, onCan
     handle: 'alexmorgan',
     partyId: 'maintainer::demo-alex',
   });
-  const [criteria, setCriteria] = useState<string[]>([
-    'Reject null and array query values',
-    'Add regression tests for invalid inputs',
-    'Preserve existing valid query behavior',
-  ]);
+  const [criteria, setCriteria] = useState<string[]>(
+    initialOpportunity?.suggestedCriteria || [
+      'Reject null and array query values',
+      'Add regression tests for invalid inputs',
+      'Preserve existing valid query behavior',
+    ]
+  );
   const [aiGenerating, setAiGenerating] = useState(false);
-  const [aiNote, setAiNote] = useState<string | null>(null);
+  const [aiNote, setAiNote] = useState<string | null>(
+    initialOpportunity
+      ? 'Scout suggested these terms. Select an existing GitHub issue, then review and edit the criteria.'
+      : null
+  );
 
   // Scout AI state
   const [scoutResult, setScoutResult] = useState<ScoutAnalysisResult | null>(null);
@@ -246,14 +253,16 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, onCan
     }
   };
 
-  const handleSelectScoutOpportunity = (opp: ScoutOpportunity) => {
+  const handleSelectScoutOpportunity = (opp: ScoutOpportunity, oppRepo?: string) => {
+    if (oppRepo && oppRepo !== selectedRepo) {
+      setSelectedRepo(oppRepo);
+    }
     setSelectedIssue(null);
     setAmount(opp.suggestedAmount);
     setCriteria(opp.suggestedCriteria);
     setAiNote('Scout suggested these terms. Select an existing GitHub issue, then review and edit the criteria. Scout has not created an issue.');
     setScoutDrawerOpen(false);
     setStep(2);
-
   };
 
   // Trigger Scout if opened with initialScout
@@ -1129,6 +1138,16 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, onCan
         isOpen={scoutDrawerOpen}
         onClose={() => setScoutDrawerOpen(false)}
         repo={selectedRepo}
+        availableRepos={repos.map(r => r.fullName)}
+        onSelectRepo={newRepo => {
+          setSelectedRepo(newRepo);
+          if (scoutResult && scoutResult.repo !== newRepo) {
+            setScoutResult(null);
+          }
+        }}
+        onRunScan={targetRepo => {
+          handleRunScout(targetRepo);
+        }}
         result={scoutResult}
         loading={scoutLoading}
         error={scoutError}

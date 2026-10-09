@@ -8,17 +8,23 @@ interface ScoutDrawerProps {
   isOpen: boolean;
   onClose: () => void;
   repo: string;
+  availableRepos?: string[];
+  onSelectRepo?: (newRepo: string) => void;
+  onRunScan?: (targetRepo: string) => void;
   result: ScoutAnalysisResult | null;
   loading: boolean;
   error?: string;
   onRetry: () => void;
-  onSelectOpportunity: (opp: ScoutOpportunity) => void;
+  onSelectOpportunity: (opp: ScoutOpportunity, repo: string) => void;
 }
 
 export function ScoutDrawer({
   isOpen,
   onClose,
   repo,
+  availableRepos = [],
+  onSelectRepo,
+  onRunScan,
   result,
   loading,
   error,
@@ -36,11 +42,138 @@ export function ScoutDrawer({
       isOpen={isOpen}
       onClose={onClose}
       title="✦ MergeMint Scout · AI Issue Discovery"
-      subtitle={`Assistive opportunity analysis for ${repo || 'selected repository'}`}
+      subtitle={`Assistive opportunity analysis for ${repo || 'your GitHub repositories'}`}
       width="560px"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
-        {loading ? (
+        {/* Repository Selection Bar */}
+        <div
+          style={{
+            background: 'var(--panel)',
+            border: '1px solid var(--line)',
+            borderRadius: '8px',
+            padding: '12px 14px',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: '8px',
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <label
+              htmlFor="scout-repo-select"
+              style={{ fontSize: '11px', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.4px' }}
+            >
+              Repository to Scout
+            </label>
+            {repo && (
+              <span style={{ fontSize: '11px', color: 'var(--mint)', display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <span style={{ fontSize: '8px' }}>●</span> Active
+              </span>
+            )}
+          </div>
+          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+            {availableRepos.length > 0 ? (
+              <select
+                id="scout-repo-select"
+                value={repo}
+                onChange={e => {
+                  const nextRepo = e.target.value;
+                  onSelectRepo?.(nextRepo);
+                  if (nextRepo && onRunScan) {
+                    onRunScan(nextRepo);
+                  }
+                }}
+                disabled={loading}
+                style={{
+                  flex: 1,
+                  background: '#181b1d',
+                  color: repo ? 'var(--text)' : 'var(--muted)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '6px',
+                  padding: '9px 12px',
+                  fontSize: '12px',
+                  outline: 'none',
+                  cursor: loading ? 'not-allowed' : 'pointer',
+                }}
+              >
+                <option value="">Choose a repository to scout…</option>
+                {availableRepos.map(r => (
+                  <option key={r} value={r}>
+                    {r}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <input
+                id="scout-repo-select"
+                type="text"
+                value={repo}
+                placeholder="Choose a repository…"
+                readOnly
+                style={{
+                  flex: 1,
+                  background: '#181b1d',
+                  color: 'var(--text)',
+                  border: '1px solid var(--line)',
+                  borderRadius: '6px',
+                  padding: '9px 12px',
+                  fontSize: '12px',
+                }}
+              />
+            )}
+            <button
+              type="button"
+              className="primary"
+              disabled={!repo || loading}
+              onClick={() => (onRunScan ? onRunScan(repo) : onRetry())}
+              style={{
+                width: 'auto',
+                whiteSpace: 'nowrap',
+                fontSize: '11px',
+                padding: '9px 14px',
+                cursor: !repo || loading ? 'not-allowed' : 'pointer',
+                opacity: !repo || loading ? 0.5 : 1,
+              }}
+            >
+              {loading ? (
+                <span style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}>
+                  <span className="spinner" style={{ width: '10px', height: '10px' }} /> Scanning…
+                </span>
+              ) : result ? (
+                '↻ Rescan'
+              ) : (
+                '⚡ Scan Codebase'
+              )}
+            </button>
+          </div>
+        </div>
+
+        {/* Content State */}
+        {!repo ? (
+          <div
+            style={{
+              padding: '48px 24px',
+              textAlign: 'center',
+              display: 'flex',
+              flexDirection: 'column',
+              alignItems: 'center',
+              gap: '14px',
+              background: 'rgba(255, 255, 255, 0.01)',
+              borderRadius: '8px',
+              border: '1px dashed var(--line)',
+            }}
+          >
+            <span style={{ fontSize: '32px' }}>🔍</span>
+            <div>
+              <strong style={{ fontSize: '14px', color: 'var(--text)', display: 'block', marginBottom: '4px' }}>
+                Select a repository to scan
+              </strong>
+              <p style={{ color: 'var(--muted)', fontSize: '12px', maxWidth: '380px', margin: 0, lineHeight: 1.5 }}>
+                Choose any accessible repository from the dropdown above. Scout AI will analyze code architecture, identify high-leverage gaps, and propose structured bounties with clear acceptance criteria.
+              </p>
+            </div>
+          </div>
+        ) : loading ? (
           <div
             style={{
               padding: '36px 20px',
@@ -158,26 +291,13 @@ export function ScoutDrawer({
             </div>
 
             <div style={{ fontSize: '12px', fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase', letterSpacing: '0.5px' }}>
-              Discovered Opportunities ({result.opportunities.length})
+              ✦ Discovered Opportunities ({result.opportunities.length})
             </div>
 
             {/* Opportunities List */}
             <div style={{ display: 'flex', flexDirection: 'column', gap: '14px' }}>
               {result.opportunities.map(opp => {
-                const isCriteriaOpen = expandedCriteriaId === opp.id;
-                const signalColor =
-                  opp.confidenceLevel === 'Strong signal'
-                    ? 'var(--mint)'
-                    : opp.confidenceLevel === 'Medium signal'
-                    ? '#38bdf8'
-                    : 'var(--muted)';
-                const signalBg =
-                  opp.confidenceLevel === 'Strong signal'
-                    ? 'rgba(88, 203, 168, 0.12)'
-                    : opp.confidenceLevel === 'Medium signal'
-                    ? 'rgba(56, 189, 248, 0.12)'
-                    : 'rgba(255, 255, 255, 0.05)';
-
+                const isCriteriaExpanded = expandedCriteriaId === opp.id;
                 return (
                   <div
                     key={opp.id}
@@ -189,20 +309,21 @@ export function ScoutDrawer({
                       display: 'flex',
                       flexDirection: 'column',
                       gap: '12px',
-                      transition: 'border-color 0.15s ease',
                     }}
                   >
-                    <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', gap: '8px' }}>
-                      <div style={{ display: 'flex', flexDirection: 'column', gap: '4px' }}>
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
+                    {/* Header: Title and Badges */}
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: '12px' }}>
+                      <div style={{ flex: 1 }}>
+                        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap', marginBottom: '6px' }}>
                           <span
                             style={{
                               fontSize: '10px',
-                              fontWeight: 700,
-                              padding: '2px 6px',
+                              padding: '2px 7px',
                               borderRadius: '4px',
+                              fontWeight: 600,
                               background: 'rgba(88, 203, 168, 0.15)',
                               color: 'var(--mint)',
+                              border: '1px solid rgba(88, 203, 168, 0.3)',
                             }}
                           >
                             {opp.badge}
@@ -210,10 +331,10 @@ export function ScoutDrawer({
                           <span
                             style={{
                               fontSize: '10px',
+                              padding: '2px 7px',
+                              borderRadius: '4px',
                               color: 'var(--muted)',
                               border: '1px solid var(--line)',
-                              padding: '2px 6px',
-                              borderRadius: '4px',
                             }}
                           >
                             {opp.difficulty}
@@ -221,94 +342,55 @@ export function ScoutDrawer({
                           <span
                             style={{
                               fontSize: '10px',
-                              fontWeight: 600,
-                              color: signalColor,
-                              background: signalBg,
-                              padding: '2px 6px',
+                              padding: '2px 7px',
                               borderRadius: '4px',
+                              color: opp.confidenceLevel === 'Strong signal' ? 'var(--mint)' : opp.confidenceLevel === 'Medium signal' ? '#eab308' : 'var(--muted)',
+                              border: '1px solid var(--line)',
                             }}
+                            title={`Signal confidence: ${opp.confidenceLevel}`}
                           >
-                            {opp.confidenceLevel || 'Strong signal'}
+                            {opp.confidenceLevel} Confidence
                           </span>
                         </div>
-                        <h4 style={{ margin: '4px 0 0', fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
+                        <h3 style={{ margin: 0, fontSize: '14px', fontWeight: 600, color: 'var(--text)' }}>
                           {opp.title}
-                        </h4>
+                        </h3>
                       </div>
-                      <div style={{ textAlign: 'right', whiteSpace: 'nowrap' }}>
-                        <strong style={{ fontSize: '14px', color: 'var(--mint)' }}>
-                          {opp.suggestedAmount} MMT
-                        </strong>
-                        <small style={{ display: 'block', fontSize: '10px', color: 'var(--muted)' }}>
-                          Suggested Bounty
-                        </small>
+                      <div
+                        style={{
+                          textAlign: 'right',
+                          flexShrink: 0,
+                          background: 'rgba(255, 255, 255, 0.03)',
+                          padding: '6px 10px',
+                          borderRadius: '6px',
+                          border: '1px solid var(--line)',
+                        }}
+                      >
+                        <span style={{ fontSize: '10px', color: 'var(--muted)', display: 'block' }}>Suggested</span>
+                        <strong style={{ fontSize: '13px', color: 'var(--mint)' }}>{opp.suggestedAmount} MMT</strong>
                       </div>
                     </div>
 
-                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--muted)', lineHeight: 1.5 }}>
+                    {/* Description */}
+                    <p style={{ margin: 0, fontSize: '12px', color: 'var(--text)', lineHeight: 1.5 }}>
                       {opp.description}
                     </p>
 
-                    {/* Evidence & Trigger Preview */}
-                    {opp.evidence && (
-                      <div
-                        style={{
-                          background: 'rgba(0, 0, 0, 0.2)',
-                          border: '1px solid var(--line)',
-                          borderRadius: '6px',
-                          padding: '8px 10px',
-                          fontSize: '11px',
-                          color: 'var(--muted)',
-                          display: 'flex',
-                          flexDirection: 'column',
-                          gap: '4px',
-                        }}
-                      >
-                        <div style={{ display: 'flex', alignItems: 'center', gap: '6px', flexWrap: 'wrap' }}>
-                          <strong style={{ color: 'var(--text)', fontSize: '11px' }}>Code Context:</strong>
-                          {opp.evidence.moduleOrConfig && (
-                            <span style={{ color: 'var(--mint)', fontFamily: 'monospace' }}>
-                              [{opp.evidence.moduleOrConfig}]
-                            </span>
-                          )}
-                          {opp.evidence.filePaths.map((fp, i) => (
-                            <span
-                              key={i}
-                              style={{
-                                fontFamily: 'monospace',
-                                color: 'var(--muted)',
-                                background: 'rgba(255, 255, 255, 0.05)',
-                                padding: '1px 4px',
-                                borderRadius: '3px',
-                              }}
-                            >
-                              {fp}
-                            </span>
-                          ))}
-                        </div>
-                        <div style={{ fontSize: '11px', color: 'var(--text)' }}>
-                          <em>Trigger:</em> {opp.evidence.triggerReason}
-                        </div>
-                      </div>
-                    )}
-
+                    {/* Rationale */}
                     <div
                       style={{
-                        background: 'rgba(255, 255, 255, 0.03)',
-                        borderRadius: '6px',
-                        padding: '8px 10px',
                         fontSize: '11px',
                         color: 'var(--muted)',
-                        borderLeft: '2px solid var(--mint)',
+                        background: 'rgba(0, 0, 0, 0.2)',
+                        padding: '8px 10px',
+                        borderRadius: '6px',
+                        borderLeft: '3px solid var(--mint)',
                       }}
                     >
-                      <strong style={{ color: 'var(--text)', display: 'block', marginBottom: '2px' }}>
-                        Scout Rationale:
-                      </strong>
-                      {opp.rationale}
+                      <strong>Why this matters:</strong> {opp.rationale}
                     </div>
 
-                    {/* Criteria Accordion */}
+                    {/* Criteria Expandable Section */}
                     <div>
                       <button
                         type="button"
@@ -323,15 +405,16 @@ export function ScoutDrawer({
                           display: 'inline-flex',
                           alignItems: 'center',
                           gap: '4px',
+                          fontWeight: 500,
                         }}
                       >
-                        {isCriteriaOpen ? '▼ Hide Acceptance Criteria' : '► View Suggested Acceptance Criteria (' + opp.suggestedCriteria.length + ')'}
+                        <span>{isCriteriaExpanded ? '▾ Hide' : '▸ View'} Suggested Acceptance Criteria ({opp.suggestedCriteria.length})</span>
                       </button>
 
-                      {isCriteriaOpen && (
+                      {isCriteriaExpanded && (
                         <ul
                           style={{
-                            margin: '8px 0 0',
+                            margin: '8px 0 0 0',
                             paddingLeft: '18px',
                             fontSize: '11px',
                             color: 'var(--text)',
@@ -347,11 +430,12 @@ export function ScoutDrawer({
                       )}
                     </div>
 
+                    {/* Action Button: Turn into Bounty */}
                     <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '4px' }}>
                       <button
                         type="button"
                         className="primary small"
-                        onClick={() => onSelectOpportunity(opp)}
+                        onClick={() => onSelectOpportunity(opp, repo)}
                         style={{ display: 'inline-flex', alignItems: 'center', gap: '6px' }}
                       >
                         <span>✦ Turn into Bounty</span> →

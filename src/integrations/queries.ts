@@ -29,9 +29,12 @@ export function useGitHubAuth() {
  * Server-state hook for GitHub Accessible Repositories
  */
 export function useGitHubRepositories() {
+  const { data: auth } = useGitHubAuth();
   return useQuery<GitHubRepo[]>({
     queryKey: QUERY_KEYS.githubRepos,
     queryFn: () => github.getRepositories(),
+    enabled: !!auth && (auth.mode === 'mock' || auth.connected),
+    retry: false,
     staleTime: 2 * 60 * 1000,
   });
 }

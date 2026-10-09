@@ -34,10 +34,10 @@ export async function GET(request: Request) {
     .find(c => c.trim().startsWith(`${OAUTH_STATE_COOKIE_NAME}=`))
     ?.split('=')[1];
 
-  const isDev = process.env.NODE_ENV !== 'production';
+
   const stateMatches = Boolean(state && storedState && decodeURIComponent(storedState.trim()) === state);
 
-  if (!state || (!stateMatches && (!isDev || storedState))) {
+  if (!stateMatches) {
     return NextResponse.redirect(redirectHome('csrf_state_mismatch'));
   }
 
@@ -60,6 +60,7 @@ export async function GET(request: Request) {
         client_secret: cfg.clientSecret,
         code,
         state,
+        redirect_uri: new URL('/api/github/auth/callback', process.env.NEXT_PUBLIC_APP_URL || request.url).toString(),
       }),
     });
 

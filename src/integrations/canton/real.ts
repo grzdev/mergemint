@@ -1,3 +1,4 @@
+import { RevisionChangedError } from '@/domain/reconciliation';
 import type { Bounty, Party } from '@/domain/bounty';
 import type {
   CantonBalances,
@@ -66,6 +67,7 @@ export class RealCantonIntegration implements CantonIntegration {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.code === 'REVISION_CHANGED' && err.submission) throw new RevisionChangedError(err.error, err.submission);
       throw new Error(err.error || `Failed to fund bounty on Canton (${res.status})`);
     }
 
@@ -87,6 +89,7 @@ export class RealCantonIntegration implements CantonIntegration {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.code === 'REVISION_CHANGED' && err.submission) throw new RevisionChangedError(err.error, err.submission);
       throw new Error(err.error || `Failed to claim bounty on Canton (${res.status})`);
     }
 
@@ -108,6 +111,7 @@ export class RealCantonIntegration implements CantonIntegration {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.code === 'REVISION_CHANGED' && err.submission) throw new RevisionChangedError(err.error, err.submission);
       throw new Error(err.error || `Failed to record approval on Canton (${res.status})`);
     }
 
@@ -116,10 +120,13 @@ export class RealCantonIntegration implements CantonIntegration {
   }
 
   async settle(bounty: Bounty, simulateFailure = false): Promise<string> {
+    return (await this.settleDetailed(bounty, simulateFailure)).reference;
+  }
+  async settleDetailed(bounty: Bounty, simulateFailure = false): Promise<CantonTransactionResult> {
     if (typeof window === 'undefined') {
       const { settleBountyOnLedger } = await import('./server/client');
       const res = await settleBountyOnLedger(bounty, simulateFailure);
-      return res.reference;
+      return res;
     }
 
     const res = await fetch('/api/canton/settle', {
@@ -130,11 +137,12 @@ export class RealCantonIntegration implements CantonIntegration {
 
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.code === 'REVISION_CHANGED' && err.submission) throw new RevisionChangedError(err.error, err.submission);
       throw new Error(err.error || `Failed to settle bounty on Canton (${res.status})`);
     }
 
-    const data = (await res.json()) as { reference: string; receiptId: string };
-    return data.reference;
+    const data = await res.json();
+    return { ...data, contractId: data.receiptId, status: 'SETTLED' };
   }
 
   async getActiveBounties(): Promise<CantonContract[]> {
@@ -157,7 +165,8 @@ export class RealCantonIntegration implements CantonIntegration {
       return queryLedgerBalances();
     }
     const status = await this.getStatus();
-    return status.balances || { sponsor: '10000', contributor: '0', escrow: '0', currency: 'MMT' };
+    if (!status.balances) throw new Error('Canton balances are unavailable.');
+    return status.balances;
   }
 }
 

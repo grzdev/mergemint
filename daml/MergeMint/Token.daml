@@ -1,83 +1,185 @@
 module MergeMint.Token where
 
+import DA.Optional (isNone, isSome, fromSome)
 import Splice.Api.Token.HoldingV1 as HoldingV1
 import Splice.Api.Token.MetadataV1 as MetadataV1
 
--- | MergeMint CIP-56 Fungible Token Holding.
--- Implements Splice.Api.Token.HoldingV1.Holding interface directly.
+-- Demo asset issued by a trusted admin. Funding consumes existing holdings.
 template MergeMintHolding
   with
     admin : Party
     owner : Party
     instrument : Text
     amount : Decimal
-    lock : Optional HoldingV1.Lock
   where
     signatory admin
     observer owner
-
     ensure amount > 0.0 && instrument /= ""
 
-    -- | Direct transfer choice moving holding to a new owner
     choice Transfer : ContractId MergeMintHolding
-      with
-        newOwner : Party
+      with newOwner : Party
       controller owner
-      do
-        assertMsg "Holding is locked" (lock == None)
-        create this with
-          owner = newOwner
+      do create this with owner = newOwner
 
-    -- | Lock choice for bounty escrow
-    choice LockForBounty : ContractId MergeMintHolding
+    -- Sponsor and maintainer jointly accept terms when funding. Value is conserved.
+    choice FundBounty : ContractId MergeMintBounty
       with
-        locker : Party
-        contextText : Text
-      controller owner
+        bountyId : Text
+        maintainer : Party
+        repository : Text
+        issueNumber : Int
+        issueUrl : Text
+        reward : Decimal
+        acceptanceCriteria : [Text]
+      controller owner, maintainer
       do
-        assertMsg "Holding already locked" (lock == None)
-        create this with
-          lock = Some HoldingV1.Lock with
-            holders = [locker]
-            expiresAt = None
-            expiresAfter = None
-            context = Some contextText
+        assertMsg "Insufficient holding balance" (reward > 0.0 && reward <= amount)
+        if reward < amount then do
+          _ <- create this with amount = amount - reward
+          pure ()
+        else pure ()
+        now <- getTime
+        create MergeMintBounty with
+          admin = admin
+          sponsor = owner
+          maintainer = maintainer
+          contributor = None
+          bountyId = bountyId
+          repository = repository
+          issueNumber = issueNumber
+          issueUrl = issueUrl
+          amount = reward
+          asset = instrument
+          acceptanceCriteria = acceptanceCriteria
+          submissionSha = None
+          prNumber = None
+          status = "FUNDED"
+          createdAt = now
 
-    -- | Settle lock choice: releases and transfers locked holding to contributor
-    choice SettleLocked : ContractId MergeMintHolding
-      with
-        recipient : Party
-        authorizedBy : Party
-      controller authorizedBy
-      do
-        case lock of
-          None -> abort "Holding is not locked"
-          Some l -> do
-            assertMsg "Unauthorized lock settler" (authorizedBy `elem` l.holders)
-            create this with
-              owner = recipient
-              lock = None
-
-    -- | Unlock/refund choice: returns locked holding back to sponsor
-    choice Unlock : ContractId MergeMintHolding
-      with
-        authorizedBy : Party
-      controller authorizedBy
-      do
-        case lock of
-          None -> abort "Holding is not locked"
-          Some l -> do
-            assertMsg "Unauthorized unlocker" (authorizedBy `elem` l.holders)
-            create this with
-              lock = None
-
-    -- | Splice / CIP-56 Holding Interface Implementation!
     interface instance HoldingV1.Holding for MergeMintHolding where
       view = HoldingV1.HoldingView with
         owner = owner
-        instrumentId = HoldingV1.InstrumentId with
-          admin = admin
-          id = instrument
+        instrumentId = HoldingV1.InstrumentId with admin = admin; id = instrument
         amount = amount
-        lock = lock
+        lock = None
         meta = MetadataV1.emptyMetadata
+
+-- The bounty IS the locked holding: no independent transfer/unlock choice exists.
+-- Issuer, sponsor and maintainer are jointly trusted for direct creation/archive.
+template MergeMintBounty
+  with
+    admin : Party
+    bountyId : Text
+    sponsor : Party
+    maintainer : Party
+    contributor : Optional Party
+    repository : Text
+    issueNumber : Int
+    issueUrl : Text
+    amount : Decimal
+    asset : Text
+    acceptanceCriteria : [Text]
+    submissionSha : Optional Text
+    prNumber : Optional Int
+    status : Text
+    createdAt : Time
+  where
+    signatory admin, sponsor, maintainer
+    observer optional [] (\p -> [p]) contributor
+    ensure amount > 0.0 && issueNumber > 0 && repository /= "" && bountyId /= "" && not (null acceptanceCriteria)
+
+    choice Claim : ContractId MergeMintBounty
+      with contributorParty : Party
+      controller contributorParty
+      do
+        assertMsg "Only unclaimed funded bounties can be claimed" (status == "FUNDED" && isNone contributor)
+        create this with contributor = Some contributorParty; status = "CLAIMED"
+
+    -- Maintainer records the GitHub revision attested by the authenticated server.
+    -- Canton cannot observe GitHub; this external attestation remains a trust boundary.
+    choice SubmitRevision : ContractId MergeMintBounty
+      with
+        sha : Text
+        pullRequest : Int
+      controller maintainer
+      do
+        assertMsg "Contributor required" (isSome contributor)
+        assertMsg "Valid revision and PR required" (sha /= "" && pullRequest > 0)
+        assertMsg "Invalid submission state" (status == "CLAIMED" || status == "SUBMITTED" || status == "APPROVED")
+        assertMsg "Cannot replace linked PR" (isNone prNumber || prNumber == Some pullRequest)
+        create this with submissionSha = Some sha; prNumber = Some pullRequest; status = "SUBMITTED"
+
+    choice Approve : ContractId MergeMintBounty
+      with
+        approvingMaintainer : Party
+        sha : Text
+      controller approvingMaintainer
+      do
+        assertMsg "Only the maintainer may approve" (approvingMaintainer == maintainer)
+        assertMsg "Submission required" (status == "SUBMITTED" && isSome contributor && isSome prNumber)
+        assertMsg "Revision mismatch" (submissionSha == Some sha && sha /= "")
+        create this with status = "APPROVED"
+
+    choice Settle : ContractId SettledReceipt
+      with
+        settler : Party
+        sha : Text
+        settlementRef : Text
+      controller settler
+      do
+        assertMsg "Only maintainer may settle" (settler == maintainer)
+        assertMsg "Approved exact revision required" (status == "APPROVED" && submissionSha == Some sha && isSome contributor)
+        assertMsg "Reference required" (settlementRef /= "")
+        recipientHolding <- create MergeMintHolding with
+          admin = admin
+          owner = fromSome contributor
+          instrument = asset
+          amount = amount
+        now <- getTime
+        create SettledReceipt with
+          admin = admin
+          bountyId = bountyId
+          sponsor = sponsor
+          maintainer = maintainer
+          contributor = fromSome contributor
+          repository = repository
+          issueNumber = issueNumber
+          amount = amount
+          asset = asset
+          approvedSha = sha
+          prNumber = fromSome prNumber
+          settlementRef = settlementRef
+          tokenRecipientHoldingId = recipientHolding
+          settledAt = now
+
+    interface instance HoldingV1.Holding for MergeMintBounty where
+      view = HoldingV1.HoldingView with
+        owner = sponsor
+        instrumentId = HoldingV1.InstrumentId with admin = admin; id = asset
+        amount = amount
+        lock = Some HoldingV1.Lock with
+          holders = [maintainer]
+          expiresAt = None
+          expiresAfter = None
+          context = Some ("MergeMint bounty " <> bountyId)
+        meta = MetadataV1.emptyMetadata
+
+template SettledReceipt
+  with
+    admin : Party
+    bountyId : Text
+    sponsor : Party
+    maintainer : Party
+    contributor : Party
+    repository : Text
+    issueNumber : Int
+    amount : Decimal
+    asset : Text
+    approvedSha : Text
+    prNumber : Int
+    settlementRef : Text
+    tokenRecipientHoldingId : ContractId MergeMintHolding
+    settledAt : Time
+  where
+    signatory admin, sponsor, maintainer
+    observer contributor

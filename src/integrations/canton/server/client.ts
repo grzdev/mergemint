@@ -358,7 +358,7 @@ interface RawActiveContract {
   };
 }
 
-async function submitLedgerCommand(
+export async function submitLedgerCommand(
   actAs: string[],
   readAs: string[],
   command: Record<string, unknown> | Array<Record<string, unknown>>,
@@ -452,16 +452,8 @@ export async function queryLedgerActiveContracts(): Promise<CantonContract[]> {
     const templateId: string = evt.templateId || '';
     const arg = evt.createArgument || {};
 
-    if (templateId.includes('MergeMintBounty')) {
-      // Find matching locked holding created during bounty funding (CIP-56 MergeMintHolding or fallback Iou)
-      const matchingHolding = rawList.find(
-        c =>
-          c.workflowId === `wf-fund-${arg.bountyId}` &&
-          (c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('MergeMintHolding') ||
-           c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('Iou'))
-      );
-      const tokenHoldingContractId = matchingHolding?.contractEntry?.JsActiveContract?.createdEvent?.contractId;
-
+    if (templateId === `${cfg.packageId}:MergeMint.Token:MergeMintBounty`) {
+      const tokenHoldingContractId = evt.contractId;
       results.push({
         contractId: evt.contractId,
         templateId,
@@ -472,24 +464,17 @@ export async function queryLedgerActiveContracts(): Promise<CantonContract[]> {
         repository: arg.repository,
         issueNumber: parseInt(arg.issueNumber, 10) || 0,
         issueUrl: arg.issueUrl,
-        amount: String(arg.amount || '0').replace(/\.?0+$/, ''),
+        amount: String(arg.amount || '0'),
         asset: arg.asset || 'MMT',
         acceptanceCriteria: arg.acceptanceCriteria || [],
         submissionSha: arg.submissionSha || undefined,
+        prNumber: arg.prNumber ? Number(arg.prNumber) : undefined,
         status: arg.status,
         createdAt: evt.createdAt || new Date().toISOString(),
         tokenHoldingContractId,
       });
-    } else if (templateId.includes('SettledReceipt')) {
-      // Find matching transferred holding created during settlement (CIP-56 MergeMintHolding or fallback Iou)
-      const matchingRecipientHolding = rawList.find(
-        c =>
-          c.workflowId === `wf-settle-${arg.bountyId}` &&
-          (c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('MergeMintHolding') ||
-           c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('Iou'))
-      );
-      const tokenRecipientHoldingId = matchingRecipientHolding?.contractEntry?.JsActiveContract?.createdEvent?.contractId;
-
+    } else if (templateId === `${cfg.packageId}:MergeMint.Token:SettledReceipt`) {
+      const tokenRecipientHoldingId = arg.tokenRecipientHoldingId;
       results.push({
         contractId: evt.contractId,
         templateId,
@@ -500,10 +485,11 @@ export async function queryLedgerActiveContracts(): Promise<CantonContract[]> {
         repository: arg.repository,
         issueNumber: parseInt(arg.issueNumber, 10) || 0,
         issueUrl: `https://github.com/${arg.repository}/issues/${arg.issueNumber}`,
-        amount: String(arg.amount || '0').replace(/\.?0+$/, ''),
+        amount: String(arg.amount || '0'),
         asset: arg.asset || 'MMT',
         acceptanceCriteria: [],
         submissionSha: arg.approvedSha,
+        prNumber: Number(arg.prNumber),
         status: 'SETTLED',
         createdAt: evt.createdAt || new Date().toISOString(),
         settledReceipt: {
@@ -534,46 +520,19 @@ export async function queryLedgerBalances(): Promise<CantonBalances> {
     return localLedger.getBalances(cfg.parties.sponsor.partyId, cfg.parties.contributor.partyId);
   }
 
-  try {
-    const rawList = await queryRawLedgerContracts();
-    const contributorParty = cfg.parties.contributor.partyId;
-
-    let contributorSum = 0;
-    let escrowSum = 0;
-
-    for (const entry of rawList) {
-      const active = entry.contractEntry?.JsActiveContract;
-      if (!active?.createdEvent) continue;
-      const tId = active.createdEvent.templateId || '';
-      const arg = active.createdEvent.createArgument || {};
-
-      if (tId.includes('MergeMintHolding') || tId.includes('Holding') || tId.includes('Iou')) {
-        const val = parseFloat(typeof arg.amount === 'object' && arg.amount !== null ? arg.amount.value : arg.amount || '0');
-        if (arg.owner === contributorParty || (arg.owner && !arg.owner.startsWith('sponsor::'))) {
-          contributorSum += val;
-        } else if (arg.lock || entry.workflowId?.startsWith('wf-fund-')) {
-          escrowSum += val;
-        }
-      }
+  const { units, decimal, template } = await import('./ledger');
+  let sponsor = BigInt(0), contributor = BigInt(0), escrow = BigInt(0);
+  for (const entry of await queryRawLedgerContracts()) {
+    const e = entry.contractEntry?.JsActiveContract?.createdEvent;
+    if (!e) continue;
+    const a = e.createArgument;
+    if (e.templateId === template('MergeMintBounty') && a.asset === 'MMT') escrow += units(String(a.amount));
+    if (e.templateId === template('MergeMintHolding') && a.instrument === 'MMT') {
+      if (a.owner === cfg.parties.sponsor.partyId) sponsor += units(String(a.amount));
+      if (a.owner === cfg.parties.contributor.partyId) contributor += units(String(a.amount));
     }
-
-    const initialPool = 10000;
-    const sponsorAvailable = Math.max(0, initialPool - escrowSum - contributorSum);
-
-    return {
-      sponsor: sponsorAvailable.toFixed(0),
-      contributor: contributorSum.toFixed(0),
-      escrow: escrowSum.toFixed(0),
-      currency: 'MMT',
-    };
-  } catch {
-    return {
-      sponsor: '10000',
-      contributor: '0',
-      escrow: '0',
-      currency: 'MMT',
-    };
   }
+  return { sponsor: decimal(sponsor), contributor: decimal(contributor), escrow: decimal(escrow), currency: 'MMT' };
 }
 
 async function findActiveContractByBountyId(bountyId: string): Promise<CantonContract | null> {
@@ -624,24 +583,7 @@ export async function getCantonStatus(): Promise<CantonStatus> {
       headers: { 'Content-Type': 'application/json' },
     });
     const connected = res.ok;
-    let parties = cfg.parties;
-    if (connected) {
-      try {
-        const data = (await res.json()) as { partyDetails: Array<{ party: string }> };
-        const liveSponsor = data.partyDetails.find(p => p.party.startsWith('sponsor::'))?.party;
-        const liveMaintainer = data.partyDetails.find(p => p.party.startsWith('maintainer::'))?.party;
-        const liveContributor = data.partyDetails.find(p => p.party.startsWith('contributor::'))?.party;
-        if (liveSponsor || liveMaintainer || liveContributor) {
-          parties = {
-            sponsor: { ...parties.sponsor, partyId: liveSponsor || parties.sponsor.partyId },
-            maintainer: { ...parties.maintainer, partyId: liveMaintainer || parties.maintainer.partyId },
-            contributor: { ...parties.contributor, partyId: liveContributor || parties.contributor.partyId },
-          };
-        }
-      } catch {
-        // preserve cfg.parties if parsing fails
-      }
-    }
+    const parties = cfg.parties;
 
     const balances = connected ? await queryLedgerBalances() : undefined;
 
@@ -697,87 +639,7 @@ export async function fundBountyOnLedger(bounty: Bounty): Promise<CantonTransact
     };
   }
 
-  // Real Canton LocalNet execution
-  const sponsorParty = bounty.sponsor.partyId || cfg.parties.sponsor.partyId;
-  const maintainerParty = bounty.maintainer.partyId || cfg.parties.maintainer.partyId;
-  const amountNum = parseFloat(String(bounty.amount)) || 500.0;
-  const amountStr = `${amountNum.toFixed(1)}`;
-  const issueNumStr = `${bounty.issue}`;
-  const templateId = `#mergemint-bounty:MergeMint.Bounty:MergeMintBounty`;
-  const tokenTemplateId = `#mergemint-bounty:MergeMint.Token:MergeMintHolding`;
-  const commandId = `cmd-fund-${bounty.id}-${Date.now()}`;
-  const workflowId = `wf-fund-${bounty.id}`;
-
-  const bountyCommand = {
-    CreateCommand: {
-      templateId,
-      createArguments: {
-        bountyId: bounty.id,
-        sponsor: sponsorParty,
-        maintainer: maintainerParty,
-        contributor: null,
-        repository: bounty.repo,
-        issueNumber: issueNumStr,
-        issueUrl: `https://github.com/${bounty.repo}/issues/${bounty.issue}`,
-        amount: amountStr,
-        asset: bounty.asset || 'MMT',
-        acceptanceCriteria: bounty.criteria || [],
-        submissionSha: null,
-        status: 'FUNDED',
-        createdAt: new Date().toISOString(),
-      },
-    },
-  };
-
-  const holdingCommand = {
-    CreateCommand: {
-      templateId: tokenTemplateId,
-      createArguments: {
-        admin: sponsorParty,
-        owner: sponsorParty,
-        instrument: bounty.asset || 'MMT',
-        amount: amountStr,
-        lock: {
-          holders: [sponsorParty],
-          expiresAt: null,
-          expiresAfter: null,
-          context: `Bounty ${bounty.id} Escrow`,
-        },
-      },
-    },
-  };
-
-  const { updateId } = await submitLedgerCommand(
-    [sponsorParty],
-    [maintainerParty],
-    [bountyCommand, holdingCommand],
-    commandId,
-    workflowId
-  );
-
-  // Retrieve assigned real contractId and locked holding contractId from ACS
-  const rawList = await queryRawLedgerContracts();
-  const bountyContract = rawList.find(
-    c => c.contractEntry?.JsActiveContract?.createdEvent?.createArgument?.bountyId === bounty.id
-  );
-  const holdingContract = rawList.find(
-    c =>
-      c.workflowId === workflowId &&
-      (c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('MergeMintHolding') ||
-       c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('Iou'))
-  );
-
-  const contractId = bountyContract?.contractEntry?.JsActiveContract?.createdEvent?.contractId || updateId;
-  const tokenHoldingId = holdingContract?.contractEntry?.JsActiveContract?.createdEvent?.contractId;
-
-  return {
-    transactionId: updateId,
-    contractId,
-    reference: contractId,
-    timestamp: new Date().toISOString(),
-    status: 'FUNDED',
-    tokenHoldingId,
-  };
+  return (await import('./ledger')).fund(bounty);
 }
 
 /**
@@ -809,58 +671,13 @@ export async function claimBountyOnLedger(bountyId: string, contributor: Party):
     };
   }
 
-  const existing = await findActiveContractByBountyId(bountyId);
-  if (!existing) {
-    throw new CantonLedgerError(`No active bounty contract found on Canton for ID "${bountyId}".`, 404);
-  }
-
-  if (existing.status !== 'FUNDED') {
-    throw new CantonLedgerError(`Cannot claim bounty in state "${existing.status}". Only FUNDED bounties can be claimed.`, 400);
-  }
-  if (existing.contributor) {
-    throw new CantonLedgerError('Bounty has already been claimed by another contributor.', 409);
-  }
-
-  const contributorParty = contributor.partyId || cfg.parties.contributor.partyId;
-  const templateId = `#mergemint-bounty:MergeMint.Bounty:MergeMintBounty`;
-  const commandId = `cmd-claim-${bountyId}-${Date.now()}`;
-  const workflowId = `wf-claim-${bountyId}`;
-
-  const command = {
-    ExerciseCommand: {
-      templateId,
-      contractId: existing.contractId,
-      choice: 'Claim',
-      choiceArgument: {
-        contributorParty,
-      },
-    },
-  };
-
-  const { updateId } = await submitLedgerCommand(
-    [contributorParty],
-    [existing.sponsor, existing.maintainer],
-    command,
-    commandId,
-    workflowId
-  );
-
-  const updated = await findActiveContractByBountyId(bountyId);
-  const contractId = updated?.contractId || updateId;
-
-  return {
-    transactionId: updateId,
-    contractId,
-    reference: contractId,
-    timestamp: new Date().toISOString(),
-    status: 'CLAIMED',
-  };
+  return (await import('./ledger')).claim(bountyId, contributor);
 }
 
 /**
  * Submits PR commit revision on the Canton ledger.
  */
-export async function submitRevisionOnLedger(bountyId: string, contributor: Party, sha: string): Promise<CantonTransactionResult> {
+export async function submitRevisionOnLedger(bountyId: string, contributor: Party, sha: string, prNumber = 0): Promise<CantonTransactionResult> {
   const cfg = getCantonConfig();
   if (cfg.mode === 'simulated') {
     const existing = localLedger.findContractByBountyId(bountyId);
@@ -876,46 +693,7 @@ export async function submitRevisionOnLedger(bountyId: string, contributor: Part
       status: 'CLAIMED',
     };
   }
-  const existing = await findActiveContractByBountyId(bountyId);
-  if (!existing) {
-    throw new CantonLedgerError(`No active bounty contract found on Canton for ID "${bountyId}".`, 404);
-  }
-
-  const contributorParty = contributor.partyId || cfg.parties.contributor.partyId;
-  const templateId = `#mergemint-bounty:MergeMint.Bounty:MergeMintBounty`;
-  const commandId = `cmd-submit-rev-${bountyId}-${Date.now()}`;
-  const workflowId = `wf-submit-rev-${bountyId}`;
-
-  const command = {
-    ExerciseCommand: {
-      templateId,
-      contractId: existing.contractId,
-      choice: 'SubmitRevision',
-      choiceArgument: {
-        submittingParty: contributorParty,
-        sha,
-      },
-    },
-  };
-
-  const { updateId } = await submitLedgerCommand(
-    [contributorParty],
-    [existing.sponsor, existing.maintainer],
-    command,
-    commandId,
-    workflowId
-  );
-
-  const updated = await findActiveContractByBountyId(bountyId);
-  const contractId = updated?.contractId || updateId;
-
-  return {
-    transactionId: updateId,
-    contractId,
-    reference: contractId,
-    timestamp: new Date().toISOString(),
-    status: 'CLAIMED',
-  };
+  return (await import('./ledger')).revision(bountyId, sha, prNumber);
 }
 
 /**
@@ -951,55 +729,7 @@ export async function approveBountyOnLedger(bounty: Bounty, sha: string, maintai
     };
   }
 
-  let contract = await findActiveContractByBountyId(bounty.id);
-  if (!contract) {
-    throw new CantonLedgerError(`No active contract found on Canton for bounty "${bounty.id}".`, 404);
-  }
-
-  // Ensure revision is recorded on ledger prior to maintainer approval
-  if (contract.submissionSha !== sha && bounty.contributor) {
-    await submitRevisionOnLedger(bounty.id, bounty.contributor, sha);
-    contract = await findActiveContractByBountyId(bounty.id);
-    if (!contract) {
-      throw new CantonLedgerError(`Contract disappeared after submitting revision for bounty "${bounty.id}".`, 500);
-    }
-  }
-
-  const maintainerParty = maintainer.partyId || cfg.parties.maintainer.partyId;
-  const templateId = `#mergemint-bounty:MergeMint.Bounty:MergeMintBounty`;
-  const commandId = `cmd-approve-${bounty.id}-${Date.now()}`;
-  const workflowId = `wf-approve-${bounty.id}`;
-
-  const command = {
-    ExerciseCommand: {
-      templateId,
-      contractId: contract.contractId,
-      choice: 'Approve',
-      choiceArgument: {
-        approvingMaintainer: maintainerParty,
-        sha,
-      },
-    },
-  };
-
-  const { updateId } = await submitLedgerCommand(
-    [maintainerParty],
-    [contract.sponsor, contract.contributor || maintainerParty],
-    command,
-    commandId,
-    workflowId
-  );
-
-  const updated = await findActiveContractByBountyId(bounty.id);
-  const contractId = updated?.contractId || updateId;
-
-  return {
-    transactionId: updateId,
-    contractId,
-    reference: contractId,
-    timestamp: new Date().toISOString(),
-    status: 'APPROVED',
-  };
+  return (await import('./ledger')).approve(bounty, sha, maintainer);
 }
 
 /**
@@ -1045,112 +775,7 @@ export async function settleBountyOnLedger(bounty: Bounty, simulateFailure = fal
     };
   }
 
-  if (simulateFailure) {
-    throw new CantonLedgerError('Simulated Canton connection failure. Your approval is still valid. Retry settlement.', 503);
-  }
-
-  const contract = await findActiveContractByBountyId(bounty.id);
-  if (!contract) {
-    throw new CantonLedgerError(`No active approved contract found on Canton for bounty "${bounty.id}".`, 404);
-  }
-
-  const rawList = await queryRawLedgerContracts();
-  // Find locked token holding created during funding (CIP-56 MergeMintHolding or fallback Iou)
-  const fundWorkflowId = `wf-fund-${bounty.id}`;
-  const lockedHolding = rawList.find(
-    c =>
-      (c.workflowId === fundWorkflowId ||
-        c.contractEntry?.JsActiveContract?.createdEvent?.contractId === contract.tokenHoldingContractId) &&
-      (c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('MergeMintHolding') ||
-       c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('Iou'))
-  );
-
-  const settlementRef = `canton_tx_${Date.now()}_${crypto.randomBytes(4).toString('hex')}`;
-  const settler = bounty.maintainer.partyId || cfg.parties.maintainer.partyId;
-  const contributorParty = contract.contributor || bounty.contributor?.partyId || cfg.parties.contributor.partyId;
-  const templateId = `#mergemint-bounty:MergeMint.Bounty:MergeMintBounty`;
-  const commandId = `cmd-settle-${bounty.id}-${Date.now()}`;
-  const workflowId = `wf-settle-${bounty.id}`;
-
-  const commands: Array<Record<string, unknown>> = [
-    {
-      ExerciseCommand: {
-        templateId,
-        contractId: contract.contractId,
-        choice: 'Settle',
-        choiceArgument: {
-          settler,
-          settlementRef,
-        },
-      },
-    },
-  ];
-
-  const holdingTemplate = lockedHolding?.contractEntry?.JsActiveContract?.createdEvent?.templateId || '';
-  const holdingContractId = lockedHolding?.contractEntry?.JsActiveContract?.createdEvent?.contractId;
-
-  if (holdingContractId) {
-    if (holdingTemplate.includes('MergeMintHolding')) {
-      commands.push({
-        ExerciseCommand: {
-          templateId: `#mergemint-bounty:MergeMint.Token:MergeMintHolding`,
-          contractId: holdingContractId,
-          choice: 'SettleLocked',
-          choiceArgument: {
-            recipient: contributorParty,
-            authorizedBy: contract.sponsor,
-          },
-        },
-      });
-    } else {
-      commands.push({
-        ExerciseCommand: {
-          templateId: `#CantonExamples:Iou:Iou`,
-          contractId: holdingContractId,
-          choice: 'Transfer',
-          choiceArgument: {
-            newOwner: contributorParty,
-          },
-        },
-      });
-    }
-  }
-
-  // When settling locked holding, sponsor (lock holder) and settler act
-  const actAsParties = Array.from(new Set([settler, contract.sponsor]));
-  const readAsParties = Array.from(new Set([settler, contract.sponsor, contributorParty]));
-
-  const { updateId } = await submitLedgerCommand(
-    actAsParties,
-    readAsParties,
-    commands,
-    commandId,
-    workflowId
-  );
-
-  // Retrieve SettledReceipt and new contributor token holding from ACS
-  const afterRaw = await queryRawLedgerContracts();
-  const settled = await findActiveContractByBountyId(bounty.id);
-  const receiptId = settled?.contractId || updateId;
-
-  const recipientHolding = afterRaw.find(
-    c =>
-      c.workflowId === workflowId &&
-      (c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('MergeMintHolding') ||
-       c.contractEntry?.JsActiveContract?.createdEvent?.templateId?.includes('Iou'))
-  );
-  const tokenRecipientHoldingId = recipientHolding?.contractEntry?.JsActiveContract?.createdEvent?.contractId;
-
-  return {
-    transactionId: updateId,
-    contractId: receiptId,
-    reference: settlementRef,
-    timestamp: settled?.settledReceipt?.settledAt || new Date().toISOString(),
-    status: 'SETTLED',
-    tokenHoldingId: holdingContractId,
-    tokenTransferId: updateId,
-    tokenRecipientHoldingId,
-  };
+  return (await import('./ledger')).settle(bounty, simulateFailure);
 }
 
 /**

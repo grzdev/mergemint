@@ -35,7 +35,7 @@ async function githubFetch(url: string, token: string, options: RequestInit = {}
   headers.set('X-GitHub-Api-Version', '2022-11-28');
 
   try {
-    const res = await fetch(url, { ...options, headers });
+    const res = await fetch(url, { ...options, headers, cache: 'no-store', signal: AbortSignal.timeout(15000) });
     return res;
   } catch {
     throw new Error('Unable to connect to GitHub API. Please check your network connection.');

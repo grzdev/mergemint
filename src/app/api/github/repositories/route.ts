@@ -28,6 +28,7 @@ export async function GET(request: Request) {
   }
 
   const session = getSessionFromRequest(request);
+  if (!session?.token) return NextResponse.json({ error: "Sign in with GitHub." }, { status: 401 });
 
   try {
     const result = await getAccessibleRepositories(session?.token);

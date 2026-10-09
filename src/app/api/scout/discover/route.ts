@@ -2,6 +2,9 @@ import { NextResponse } from 'next/server';
 import { scoutEngine } from '@/integrations/ai/scout';
 import { getSessionFromRequest } from '@/integrations/github/server/session';
 
+import { getGitHubConfig } from '@/integrations/github/server/config';
+import { requireRepoAccess } from '@/integrations/canton/server/authorization';
+
 export const dynamic = 'force-dynamic';
 
 export async function POST(req: Request) {
@@ -17,6 +20,10 @@ export async function POST(req: Request) {
     }
 
     const session = getSessionFromRequest(req);
+    if (getGitHubConfig().mode === 'real') {
+      if (!session?.token) return NextResponse.json({ error: 'Sign in with GitHub.' }, { status: 401 });
+      await requireRepoAccess(repo, session.token, false);
+    }
     const result = await scoutEngine.discover(repo, body.existingIssueCount ?? 0, session?.token);
 
     return NextResponse.json(result);

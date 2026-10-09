@@ -1,5 +1,7 @@
 'use client';
 
+import { reconcileLedger, invalidateRevision, RevisionChangedError } from '@/domain/reconciliation';
+
 import { useState, useEffect } from 'react';
 import type { Bounty, Status } from '@/domain/bounty';
 import { transition } from '@/domain/bounty';
@@ -227,86 +229,8 @@ export function Dashboard() {
     const onLedger = cantonBountiesQuery.data;
     if (cantonStatus.mode === 'real' && cantonStatus.connected && onLedger && onLedger.length > 0) {
       setBounties(prev => {
-        const updated = [...prev];
-        let hasChanges = false;
-        for (const contract of onLedger) {
-          const existingIdx = updated.findIndex(b => b.id === contract.bountyId);
-          if (existingIdx >= 0) {
-            if (
-              updated[existingIdx].status !== contract.status ||
-              updated[existingIdx].fundingRef !== contract.contractId ||
-              updated[existingIdx].tokenHoldingContractId !== contract.tokenHoldingContractId
-            ) {
-              updated[existingIdx] = {
-                ...updated[existingIdx],
-                status: contract.status as Status,
-                fundingRef: contract.contractId,
-                tokenHoldingContractId: contract.tokenHoldingContractId || updated[existingIdx].tokenHoldingContractId,
-                settlement: contract.settledReceipt
-                  ? {
-                      state: 'confirmed',
-                      recipient: contract.contributor || '',
-                      amount: contract.amount,
-                      timestamp: contract.settledReceipt.settledAt,
-                      reference: contract.settledReceipt.settlementRef,
-                      tokenRecipientHoldingId: contract.settledReceipt.tokenRecipientHoldingId,
-                      tokenTransferTxId: contract.settledReceipt.tokenTransferTxId,
-                    }
-                  : updated[existingIdx].settlement,
-              };
-              hasChanges = true;
-            }
-          } else {
-            updated.push({
-              id: contract.bountyId,
-              repo: contract.repository,
-              issue: contract.issueNumber,
-              title: `Issue #${contract.issueNumber} on ${contract.repository}`,
-              amount: contract.amount,
-              asset: (contract.asset === 'CC' ? 'CC' : 'MMT'),
-              status: contract.status as Status,
-              sponsor: {
-                handle: 'sponsor',
-                partyId: contract.sponsor,
-              },
-              maintainer: {
-                handle: 'maintainer',
-                partyId: contract.maintainer,
-              },
-              contributor: contract.contributor
-                ? { handle: 'contributor', partyId: contract.contributor }
-                : undefined,
-              criteria: contract.acceptanceCriteria || [],
-              fundingRef: contract.contractId,
-              tokenHoldingContractId: contract.tokenHoldingContractId,
-              submission: contract.submissionSha
-                ? {
-                    number: contract.issueNumber,
-                    title: `Fix for issue #${contract.issueNumber}`,
-                    branch: 'patch',
-                    sha: contract.submissionSha,
-                    merged: contract.status === 'SETTLED',
-                    review: 'Approved on Canton',
-                    checks: [{ name: 'ci/cd', state: 'passed' }],
-                  }
-                : undefined,
-              settlement: contract.settledReceipt
-                ? {
-                    state: 'confirmed',
-                    recipient: contract.contributor || '',
-                    amount: contract.amount,
-                    timestamp: contract.settledReceipt.settledAt,
-                    reference: contract.settledReceipt.settlementRef,
-                    tokenRecipientHoldingId: contract.settledReceipt.tokenRecipientHoldingId,
-                    tokenTransferTxId: contract.settledReceipt.tokenTransferTxId,
-                  }
-                : undefined,
-              activity: contract.status === 'SETTLED' ? 'Settled on Canton' : 'Active on Canton',
-            });
-            hasChanges = true;
-          }
-        }
-        return hasChanges ? updated : prev;
+        const updated=onLedger.map(c=>reconcileLedger(c,prev.find(b=>b.id===c.bountyId)));
+        return [...prev.filter(b=>b.status==='DRAFT' && !onLedger.some(c=>c.bountyId===b.id)),...updated];
       });
     }
   }, [cantonBountiesQuery.data, cantonStatus.mode, cantonStatus.connected]);
@@ -427,6 +351,13 @@ export function Dashboard() {
       setActivity(all => [`${label.replace('...', '')} completed for issue #${updated.issue}`, ...all]);
       setModalAction(null);
     } catch (e) {
+      if (e instanceof RevisionChangedError && current) {
+        const invalidated=invalidateRevision(current,e.submission);
+        await bountyRepository.save(invalidated);
+        setBounties(all=>all.map(b=>b.id===current.id?invalidated:b));
+        setModalAction(null);
+        mutations.invalidateCanton();
+      }
       setError(e instanceof Error ? e.message : 'Something went wrong. Please retry.');
     } finally {
       setBusy('');
@@ -551,7 +482,7 @@ export function Dashboard() {
             onClick={() => setDemo(!demo)}
             aria-expanded={demo}
           >
-            ◉ {authStatus.mode === 'real' ? 'Real GitHub mode' : 'Demo mode'} <span>ⓘ</span>
+            ◉ {authStatus.mode === 'real' ? 'Real GitHub mode' : 'Mock Demo / Interactive Preview'} <span>ⓘ</span>
           </button>
           {demo && (
             <div className="demo-explanation">
@@ -828,7 +759,7 @@ export function Dashboard() {
                           </div>
                           <span
                             className={
-                              current.submission.checks.every(c => c.state === 'passed')
+                              current.submission.checks.length > 0 && current.submission.checks.every(c => c.state === 'passed')
                                 ? 'pass'
                                 : current.submission.checks.some(c => c.state === 'failed')
                                   ? 'warning'
@@ -836,8 +767,7 @@ export function Dashboard() {
                             }
                             style={{ fontSize: '11px', fontWeight: 500 }}
                           >
-                            {current.submission.checks.filter(c => c.state === 'passed').length}/
-                            {current.submission.checks.length} checks passing
+                            {current.submission.evidenceLoaded === false ? 'CI evidence not loaded' : current.submission.checks.length === 0 ? 'No CI checks reported' : `${current.submission.checks.filter(c => c.state === 'passed').length}/${current.submission.checks.length} checks passing`}
                           </span>
                         </div>
                         <div style={{ display: 'flex', alignItems: 'center', gap: '12px', fontSize: '11px' }}>
@@ -1061,7 +991,7 @@ export function Dashboard() {
                           <span>Exact commit SHA:</span>
                           <CopyableHash hash={current.submission.sha} label="Commit SHA" />
                         </div>
-                        <div>Merged: {current.submission.merged ? 'Yes' : 'No'}</div>
+                        <div>Merged: {current.submission.evidenceLoaded === false ? 'Unknown — refresh evidence' : current.submission.merged ? 'Yes' : 'No'}</div>
                         {current.submission.url && (
                           <div>
                             <a href={current.submission.url} target="_blank" rel="noopener noreferrer" style={{ color: 'var(--mint)', textDecoration: 'underline' }}>
@@ -1546,11 +1476,11 @@ export function Dashboard() {
                     onClick={() =>
                       run('Submitting settlement on Canton...', async () => {
                         try {
-                          return transition(current, {
-                            type: 'SETTLE',
-                            reference: await canton.settle(current, failSimulation),
-                          });
+                          const receipt=await canton.settleDetailed(current,failSimulation);
+                          const settled=transition(current,{type:'SETTLE',reference:receipt.transactionId,tokenRecipientHoldingId:receipt.tokenRecipientHoldingId,tokenTransferTxId:receipt.transactionId});
+                          return {...settled,settlement:{...settled.settlement!,timestamp:receipt.timestamp}};
                         } catch (e) {
+                          if (e instanceof RevisionChangedError) throw e;
                           const failedBounty: Bounty = {
                             ...current,
                             settlement: {

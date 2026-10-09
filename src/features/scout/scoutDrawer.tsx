@@ -36,7 +36,7 @@ export function ScoutDrawer({
       isOpen={isOpen}
       onClose={onClose}
       title="✦ MergeMint Scout · AI Issue Discovery"
-      subtitle={`Autonomous opportunity analysis for ${repo || 'selected repository'}`}
+      subtitle={`Assistive opportunity analysis for ${repo || 'selected repository'}`}
       width="560px"
     >
       <div style={{ display: 'flex', flexDirection: 'column', gap: '16px' }}>
@@ -141,7 +141,7 @@ export function ScoutDrawer({
                     fontWeight: 600,
                   }}
                 >
-                  Health Score: {result.healthScore}/100
+                  Bounded context · maintainer review required
                 </span>
               </div>
               <p style={{ margin: 0, fontSize: '12px', color: 'var(--text)', lineHeight: 1.5 }}>

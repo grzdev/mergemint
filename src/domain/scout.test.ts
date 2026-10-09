@@ -1,14 +1,18 @@
-import { test } from 'node:test';
+import { test, before, after } from 'node:test';
 import assert from 'node:assert/strict';
 import { scoutEngine } from '@/integrations/ai/scout';
 import { validateAndSanitizeGroqOutput } from '@/integrations/ai/groq';
 import { gatherRepoContext } from '@/integrations/ai/repoContext';
 
+const originalFetch = global.fetch;
+before(() => { process.env.GITHUB_INTEGRATION_MODE = 'mock'; delete process.env.GROQ_API_KEY; global.fetch = async () => new Response('{}', { status: 404 }); });
+after(() => { global.fetch = originalFetch; });
+
 test('1. Scout discovers high-impact opportunities for Canton/MergeMint repositories', async () => {
   const result = await scoutEngine.discover('mergemint/core', 0);
   assert.equal(result.repo, 'mergemint/core');
   assert.ok(result.opportunities.length >= 3);
-  assert.ok(result.healthScore > 0);
+  assert.equal(result.healthScore, 0, 'Fallback does not invent a health score');
   assert.ok(result.modelUsed, 'Must report model or engine used');
 
   // Checks for CIP token standard and reliability opportunities
@@ -24,7 +28,7 @@ test('1. Scout discovers high-impact opportunities for Canton/MergeMint reposito
     assert.ok(opp.suggestedCriteria.length >= 2);
     assert.ok(opp.rationale.length > 10);
     assert.ok(opp.simulatedIssueNumber > 0);
-    assert.ok(typeof opp.confidence === 'number');
+    assert.equal(opp.confidenceLevel, 'Exploratory');
   }
 });
 

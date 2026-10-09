@@ -1,3 +1,4 @@
+import { authorizeMutation, RevisionConflict } from '@/integrations/canton/server/authorization';
 import { NextResponse } from 'next/server';
 import type { Bounty } from '@/domain/bounty';
 import { CantonLedgerError, settleBountyOnLedger } from '@/integrations/canton/server/client';
@@ -6,11 +7,13 @@ export const dynamic = 'force-dynamic';
 
 export async function POST(request: Request) {
   try {
-    const body = (await request.json().catch(() => ({}))) as {
+    let body = (await request.json().catch(() => ({}))) as {
       bounty?: Bounty;
       simulateFailure?: boolean;
     };
 
+
+    body = await authorizeMutation(request, 'settle', body);
     if (!body.bounty || !body.bounty.id) {
       return NextResponse.json({ error: 'Valid bounty object is required for settlement.' }, { status: 400 });
     }
@@ -23,8 +26,10 @@ export async function POST(request: Request) {
       timestamp: result.timestamp,
       tokenHoldingId: result.tokenHoldingId,
       tokenTransferId: result.tokenTransferId,
+      tokenRecipientHoldingId: result.tokenRecipientHoldingId,
     });
   } catch (err) {
+    if (err instanceof RevisionConflict) return NextResponse.json({ error: err.message, submission: err.submission, code: 'REVISION_CHANGED' }, { status: 409 });
     if (err instanceof CantonLedgerError) {
       return NextResponse.json({ error: err.message, details: err.details }, { status: err.status });
     }

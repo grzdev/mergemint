@@ -12,3 +12,5 @@ daml/dist/
 splice-api-token-holding-v1-*/
 npm-debug.log*
 .npm-cache/
+log/
+*.log

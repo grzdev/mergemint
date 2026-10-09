@@ -1,0 +1,4 @@
+nodes.local.start()
+bootstrap.synchronizer_local()
+participant1.synchronizers.connect_local(sequencer1, alias = "mergemint-correctness")
+participant1.dars.upload("daml/mergemint-bounty-0.3.0.dar")

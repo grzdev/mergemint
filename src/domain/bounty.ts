@@ -14,6 +14,7 @@ export type Submission = {
   headBranch?: string;
   url?: string;
   mergeState?: string;
+  evidenceLoaded?: boolean;
 };
 export type VerificationReport = { sha: string; createdAt: string; criteria: { criterion: string; assessment: string; evidence: string; limitation: string }[] };
 export type Bounty = {
@@ -28,6 +29,7 @@ export type Bounty = {
     recipient: string;
     amount: string;
     reference?: string;
+    correlationReference?: string;
     timestamp: string;
     tokenRecipientHoldingId?: string;
     tokenTransferTxId?: string;

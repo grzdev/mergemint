@@ -74,6 +74,7 @@ export async function POST(request: Request) {
   }
 
   const session = getSessionFromRequest(request);
+  if (!session?.token) return NextResponse.json({ error: "Sign in with GitHub." }, { status: 401 });
 
   try {
     const submission = await getPullRequestAndEvidence(repo, prNumber, session?.token);

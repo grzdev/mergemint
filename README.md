@@ -1,255 +1,123 @@
 # MergeMint
 
-> **Decentralized Bounty Escrow & Work Verification Protocol on Canton Network**  
-> Move tokenized value on Canton from open-source sponsors to contributors upon verified GitHub pull request delivery, protected by exact-commit revision pinning and CIP-56 Holding-compatible token settlement.
+GitHub-native bounty escrow on Canton. A maintainer funds an issue, reviews a contributor's exact PR commit, and releases demo MMT through a Daml settlement transaction.
 
-[![Tests](https://img.shields.io/badge/tests-52%20passed-58cba8.svg)](#quality-gate--verification)
-[![Canton Live](https://img.shields.io/badge/Canton%20LocalNet-Live%20Participant-58cba8.svg)](#canton--daml-architecture)
-[![Token Standard](https://img.shields.io/badge/CIP--56-HoldingV1%20Compatible-38bdf8.svg)](#b-cip-56-holding-compatible-token-settlement)
-[![AI Engine](https://img.shields.io/badge/Scout%20AI-Groq%20%7C%20Llama--3.3--70b-eab308.svg)](#a-scout-ai--evidence-backed-codebase-scout)
+**Scout → existing GitHub issue → funded bounty → contributor PR and CI → maintainer approval → Canton settlement.**
 
----
+## Try it
 
-## What is MergeMint?
+- [Hosted Mock Demo / Interactive Preview](https://mergemiint.netlify.app/): simulated GitHub and Canton workflows. It is not proof of live ledger settlement.
+- LocalNet: the real Canton implementation runs locally on `127.0.0.1:7675`. The automated ledger test and signed-in GitHub rehearsal are separate checks; see verification below.
 
-**MergeMint** is an open-source bounty protocol that connects GitHub software development with on-ledger escrow on the **Canton Network**. It enables sponsors to fund specific engineering tasks, maintainers to enforce quality gates, and contributors to receive real tokenized payments upon approved delivery.
+## What the implementation does
 
-### Why It Matters
+### Escrow and settlement
 
-Traditional open-source bounty platforms suffer from three fatal flaws:
-1. **Ambiguous Tasks**: Bounties are created with vague requirements, leaving contributors guessing and maintainers reviewing irrelevant PRs.
-2. **Review Bait-and-Switch**: Escrows pay out based on branch names or PR links. If a contributor pushes broken or malicious commits after an initial review, unpinned platforms still pay out.
-3. **Simulated Payouts**: Most hackathon projects simulate transfers or rely on off-chain admin databases rather than standard token contracts on a Canton participant ledger.
+`MergeMint.Token:MergeMintHolding` represents issuer-backed demo MMT. `FundBounty` consumes an existing sponsor holding, returns any change, and creates `MergeMint.Token:MergeMintBounty`. The bounty itself is the locked holding; there is no independent unlock or transfer choice.
 
-**MergeMint solves all three:**
-- **Evidence-Backed Tasks**: Scout AI inspects actual repository source code and tests to propose grounded, fundable bounties with precise acceptance criteria.
-- **Exact-Commit Revision Pinning**: Contracts cryptographically bind the exact head commit SHA (`git rev-parse`). Any subsequent commit invalidates prior approvals and halts settlement.
-- **CIP-56 Holding-Compatible Settlement**: Funds are locked as `Splice.Api.Token.HoldingV1.Holding`-compatible tokens on a live Canton participant ledger and atomically transferred upon maintainer authorization.
+`Settle` requires maintainer approval for the recorded SHA. One ledger transaction consumes the bounty, creates the contributor's holding, and creates `SettledReceipt` referencing that holding. Funding and settlement conserve value. The issuer can issue demo MMT; this is not a market asset or a mainnet deployment.
 
----
+Both holdings implement the official `Splice.Api.Token.HoldingV1.Holding` interface. Settlement is application-specific: this is **CIP-56 Holding-compatible**, not a complete implementation of all token-standard transfer interfaces.
 
-## The 5-Step Lifecycle Flow
+The receipt stores the application correlation reference, approved SHA, recipient holding ID and ledger time. The API returns the actual transaction `updateId` separately. An application correlation reference is not a ledger transaction ID; a clean reload does not invent one.
+
+### Revision checks and roles
 
 ```
-┌─────────────────────────┐       ┌────────────────────────┐       ┌────────────────────────┐
-│      1. Scout AI        │       │  2. Canton Escrow      │       │  3. Revision Pinning   │
-│ Inspects code, manifest │       │ Locks a HoldingV1-     │       │ Binds exact PR commit  │
-│ & tests via Groq LLM    ├──────►│ compatible MMT holding ├──────►│ SHA + verifies CI test │
-│ Proposes fundable tasks │       │ on Canton LocalNet     │       │ runs before approval   │
-└─────────────────────────┘       └────────────────────────┘       └───────────┬────────────┘
-                                                                               │
-                                                                               ▼
-                                  ┌────────────────────────┐       ┌────────────────────────┐
-                                  │   5. CIP-56 Settlement │       │  4. Maintainer Review  │
-                                  │ Atomic token transfer  │◄──────┤ Authorizes completion  │
-                                  │ to contributor holding │       │ for exact revision     │
-                                  └────────────────────────┘       └────────────────────────┘
+DRAFT (browser) → FUNDED → CLAIMED → SUBMITTED → APPROVED → SETTLED (receipt)
 ```
 
-1. **Scout AI Discovery**: Server-side LLM inspects repository tree, manifests, and targeted source files to propose fundable opportunities backed by codebase evidence.
-2. **Canton Escrow**: Sponsor funds the bounty, locking MergeMint Tokens (MMT) into a Daml escrow contract on Canton LocalNet.
-3. **Claim & Revision Pinning**: Contributor links their GitHub PR. MergeMint pulls real CI check runs and binds the exact head commit SHA.
-4. **Maintainer Authorization**: Maintainer reviews the PR and approves the exact commit revision. Pushing new commits immediately resets approval back to `SUBMITTED`.
-5. **CIP-56 Holding-Compatible Settlement**: Daml contract exercises atomic settlement on Canton, transferring the locked token holding directly to the contributor party.
+Before approval and settlement, the authenticated server fetches the live PR head from GitHub. A detected SHA change records a new submission on the ledger, rejects the action with `409 REVISION_CHANGED`, and clears stale review/approval in the UI. This is a check at action time, not immediate push monitoring. GitHub and Canton do not share an atomic transaction; a push can occur after the GitHub read.
 
----
+Real mutation routes require a GitHub session and the configured sponsor, contributor or maintainer login. Funding, approval and settlement additionally require repository write/maintain/admin permission. Funding validates an existing open issue, and the linked PR must belong to that repository and be authored by the configured contributor. CI is review evidence; maintainer approval remains authoritative.
 
-## Visual Walkthrough & Product Stages
+For the **single-operator demonstration only**, `grzdev` maps to all three roles. They remain separate role checks and separate ledger parties. This does not demonstrate independent human approval. The local server controls party submissions; the issuer and joint contract signatories remain trusted. LocalNet is loopback-only and is not a production multi-user deployment or a demonstration of privacy between independently hosted participants.
 
-MergeMint connects GitHub repository work with atomic Canton token escrow. Below are the key stages of the protocol in action:
+### Scout
 
-### 1. Scout AI · Evidence-Backed Work Discovery
-*Scout analyzes repository code architecture, missing retry logic, token interfaces, and tests to propose actionable fundable work with source evidence and acceptance criteria.*
-![Scout AI Discovery](docs/screenshots/01_scout_discovery.png)
+Scout reads bounded repository context and short source excerpts, then uses server-side Groq when configured. The drawer identifies Groq versus heuristic fallback. Fallback suggestions are exploratory review prompts, not verified defects. Model citations are restricted to inspected paths; findings still require maintainer review. There is no calibrated repository health score or latency guarantee.
 
----
+Scout never creates GitHub issues or releases funds. Converting a suggestion requires selecting an existing issue and reviewing editable criteria. Missing GitHub/CI evidence is shown as unknown, not as passing tests or a merged PR.
 
-### 2. Maintainer Workspace Dashboard
-*Real-time visibility over active bounties, pending PR reviews, token allocations, and ledger synchronization.*
-![Dashboard Overview](docs/screenshots/02_dashboard_overview.png)
+## Run the mock preview
 
----
-
-### 3. Step 1: Repository Selection
-*Connected GitHub repositories with real issue counts and instant search filtering.*
-![Repository Selection](docs/screenshots/03_repo_selection.png)
-
----
-
-### 4. Step 2 & 3: Define Terms & Acceptance Criteria
-*Configure bounty rewards in MergeMint Token (MMT) with verifiable acceptance criteria.*
-![Bounty Terms & Criteria](docs/screenshots/04_bounty_terms_criteria.png)
-
----
-
-### 5. Step 4: Review & Fund on Canton Escrow
-*Pre-flight summary before locking token holdings in on-chain escrow on Canton LocalNet.*
-![Review & Fund](docs/screenshots/05_fund_canton_escrow.png)
-
----
-
-### 6. Bounty Detail & Lifecycle State Machine
-*Lifecycle tracking: Draft → Funded → Claimed → Submitted → Approved → Settled.*
-![Bounty Detail Tracking](docs/screenshots/06_bounty_detail_tracking.png)
-
----
-
-### 7. Pull Request & CI Evidence Drawer
-*Links GitHub PRs, binds exact head commit SHAs, and validates CI test runs. Revisions reset approval if commit SHAs change.*
-![PR & CI Evidence Drawer](docs/screenshots/07_pr_ci_evidence.png)
-
----
-
-### 8. Canton Settlement Receipt & CIP-56 Holding-Compatible Settlement
-*Atomic settlement releases locked tokens directly to the contributor holding contract on the Canton participant ledger.*
-![Canton Settlement Receipt](docs/screenshots/08_canton_settlement_receipt.png)
-
----
-
-## Core Pillars & Architecture
-
-### A. Scout AI · Evidence-Backed Codebase Scout
-- **Targeted Bounded Analysis**: Inspects repository tree, manifest files, README excerpts, and 3–5 targeted code files (source, error handling, tests, config) bounded to <12 KB for sub-second latency.
-- **Provider**: Server-side Groq Cloud API powered by `llama-3.3-70b-versatile` in JSON mode.
-- **Evidence-Backed**: Every proposal includes specific file paths, module name, and trigger reason (e.g., *"Direct HTTP fetch calls without exponential backoff"*).
-- **Honest Signals**: Replaces uncalibrated percentages with qualitative badges (`Strong signal`, `Medium signal`, `Exploratory`).
-- **Engine Transparency**: Unmistakable engine badge (`✦ Groq AI` vs `⚠ Heuristic fallback`). Never silently misrepresents fallback logic.
-- **Maintainer Authority Invariant**: Scout proposes only. It never unilaterally creates GitHub issues or locks escrow funds.
-
-### B. CIP-56 Holding-Compatible Token Settlement
-- **Official Interface**: Implements the official Splice Holding interface:
-  ```daml
-  package Splice.Api.Token.HoldingV1 (718a0f...);
-  interface Holding where ...
-  ```
-- **Live Canton Participant**: Deploys `MergeMint.Token:MergeMintHolding` to a running Canton participant node (`http://127.0.0.1:7575`).
-- **Atomic On-Ledger Settlement**: Maintainer approval exercises `Settle` on `MergeMintBounty`, consuming the escrow contract and transferring MMT holdings directly to the contributor party.
-- **Full Traceability**: Every settlement produces a cryptographic receipt holding:
-  - `tokenRecipientHoldingId` (transferred CIP-56 Holding contract ID)
-  - `settlementRef` (Canton transaction identifier)
-  - `approvedSha` (cryptographically pinned commit SHA)
-  - `settledAt` (ledger timestamp)
-
-### C. State Machine & Revision Pinning Guarantees
-```
-DRAFT → FUNDED → CLAIMED → SUBMITTED → APPROVED → SETTLED
-```
-1. **Sponsor & Maintainer Separation**: Separate Daml parties ensure fund providers cannot unilaterally approve their own PRs without maintainer sign-off.
-2. **Revision Pinning**: Linking a PR binds its head commit SHA (`abc1234...`). If a contributor pushes new commits to the branch, prior AI reviews and approvals are **immediately invalidated** and reset to `SUBMITTED`.
-3. **No Unapproved Settlement**: Daml contract choices strictly prevent settlement if the submission SHA does not match the approved SHA.
-
----
-
-## Quick Start & Local Setup
-
-### Prerequisites
-- **Node.js**: v20.9 or newer (v22 / v24 tested)
-- **Canton**: (Optional for local live node; mock mode is available zero-config)
+Requires Node.js 20.9+ (current verification uses Node 24).
 
 ```sh
-# Clone & install dependencies
 git clone https://github.com/grzdev/mergemint.git
 cd mergemint
-npm install
-```
-
-### 1. Run in Mock Mode (Zero-Config, Instant Demo)
-```sh
-npm run dev
-```
-Open [http://127.0.0.1:3000](http://127.0.0.1:3000). Runs with simulated GitHub repositories, pull requests, CI check runs, and Canton ledger state.
-
-### 2. Run with Live Canton LocalNet & Real GitHub Mode
-Create `.env.local` in the project root:
-
-```ini
-# --- GitHub App Configuration ---
-GITHUB_INTEGRATION_MODE=real
-GITHUB_APP_ID=your_github_app_id
-GITHUB_CLIENT_ID=your_client_id
-GITHUB_CLIENT_SECRET=your_client_secret
-# Path to downloaded private key PEM (recommended) or inline GITHUB_PRIVATE_KEY
-GITHUB_PRIVATE_KEY_PATH=secrets/your-app.private-key.pem
-GITHUB_APP_SLUG=your-app-slug
-NEXT_PUBLIC_APP_URL=http://127.0.0.1:3000
-SESSION_SECRET=your_random_32_char_secret
-
-# --- Canton Participant Configuration ---
-CANTON_INTEGRATION_MODE=real
-CANTON_LEDGER_API_URL=http://127.0.0.1:7575
-CANTON_NETWORK="Canton LocalNet"
-
-# Package ID uploaded to Canton participant (e.g. from daml build & daml ledger upload-dar)
-CANTON_PACKAGE_ID=<your_uploaded_mergemint_package_id>
-
-# Daml Party IDs allocated on the participant
-# (Note: In-memory Canton LocalNet allocates fresh participant namespaces per session)
-CANTON_SPONSOR_PARTY=sponsor::<participant_namespace>
-CANTON_MAINTAINER_PARTY=maintainer::<participant_namespace>
-CANTON_CONTRIBUTOR_PARTY=contributor::<participant_namespace>
-
-# --- Scout AI Configuration ---
-GROQ_API_KEY=gsk_your_groq_api_key_here
-GROQ_MODEL=llama-3.3-70b-versatile
-```
-
-Start the application:
-```sh
+npm ci
 npm run dev
 ```
 
----
+Open http://127.0.0.1:3000. With no `.env.local`, both integrations default to mock. When copying `.env.example`, its defaults are also mock. Keep `.env.local` and private keys out of Git.
 
-## Quality Gate & Verification
+## Run real LocalNet
+
+Requires Java 21, Canton open-source 3.5.19 and `damlc` 3.5.2. Splice interface DAR dependencies are included under `daml/dars`. Run commands from the repository root. The configuration uses in-memory state, so restarting requires fresh provisioning and new test bounties. Do not reuse a prior session's party IDs.
+
+1. Copy `.env.example` to `.env.local`. Configure the GitHub App client credentials, private-key path, app slug and a random session secret of at least 32 characters. Set `GITHUB_INTEGRATION_MODE=real`. Install the App on your demo repository with repository metadata, issues, pull requests, checks and commit-status read access. Set its callback to `http://127.0.0.1:3000/api/github/auth/callback` and use the same host in `NEXT_PUBLIC_APP_URL` and your browser.
+2. Compile and inspect the package (PowerShell; replace executable paths for your machine):
+
+```powershell
+$damlc = 'C:\path\to\damlc.exe'
+& $damlc build --package-root daml -o daml/mergemint-bounty-0.3.0.dar
+& $damlc inspect-dar daml/mergemint-bounty-0.3.0.dar
+```
+
+3. Start a fresh participant. Ports 5011, 5012, 5212, 14111, 14112 and 7675 must be available. The tracked configuration binds each to loopback. This process stays running:
+
+```powershell
+$java = 'C:\path\to\java.exe'
+$cantonJar = 'C:\path\to\canton-open-source-3.5.19.jar'
+& $java -Xmx1500m -jar $cantonJar daemon -c scripts/localnet/canton.conf --bootstrap scripts/localnet/bootstrap.canton --no-tty
+```
+
+4. In a second terminal, wait until `http://127.0.0.1:7675/v2/parties` responds and package upload completes. Provision using the main package ID from `inspect-dar`:
 
 ```sh
-# Run domain, state machine, and Scout test suites (52 passing tests)
+node scripts/provision-localnet.mjs <main-package-id>
+```
+
+Provisioning allocates three parties, issues demo MMT if no holding exists, and writes the current Canton IDs and single-operator role mappings into `.env.local`. It backs up the original environment under ignored `scratch/`. It does not configure GitHub credentials. For the verified 0.3.0 artifact, the main package ID is `ecf18d83e6f591265af31472c8a7b3816cd1d70e96406d4b4cb0aa0e3d175349`.
+
+5. Restart `npm run dev`, sign in as `grzdev`, and create a new bounty. Select an open issue and a PR **in the same repository**, authored by `grzdev`. Optional `GROQ_API_KEY` enables the LLM; otherwise Scout explicitly uses fallback.
+
+The three login variables are `CANTON_SPONSOR_GITHUB_LOGIN`, `CANTON_MAINTAINER_GITHUB_LOGIN`, and `CANTON_CONTRIBUTOR_GITHUB_LOGIN`. They can map to different authenticated users; the supplied demo maps all to `grzdev` for convenience.
+
+## Verification
+
+```sh
 npm test
-
-# Run live Canton participant on-ledger integration test
-npm run test:canton-live
-
-# Run TypeScript type check
 npm run typecheck
-
-# Run production Next.js build
 npm run build
+npm run test:canton-live
 ```
 
----
+- `npm test`: 57 offline tests, including actual HTTP route handlers with fixture sessions and mocked GitHub/ledger responses. Covers role/origin rejection, fresh-SHA conflict handling, invalid issue rejection, evidence restoration and Scout fallback.
+- `test:canton-live`: uses the real local participant and new test bounties. Checks funding debit, locked value, unauthorized choices, stale revision rejection, atomic recipient delivery, double-settlement rejection and exact decimal balance conservation. **GitHub evidence in this test is synthetic**; it is not a signed-in GitHub end-to-end test.
+- A final browser rehearsal must independently show real OAuth, a matching real issue/PR, PR/CI retrieval, approval and settlement. Record that rehearsal as the integration demo; the hosted mock preview and unit tests cannot substitute for it.
 
-## Repository Structure
+## Visual walkthrough
 
-```
-├── daml/                          # Daml smart contracts
-│   ├── MergeMint/
-│   │   ├── Bounty.daml            # Core MergeMintBounty & SettledReceipt templates
-│   │   └── Token.daml             # CIP-56 HoldingV1 implementation for MMT
-│   └── daml.yaml                  # Daml package definition with Splice DAR dependencies
-├── docs/
-│   └── screenshots/               # Step-by-step visual product tour
-├── src/
-│   ├── app/                       # Next.js App Router & server-side API routes
-│   │   ├── api/canton/            # Server endpoints for Canton JSON Ledger API v2
-│   │   ├── api/github/            # GitHub App OAuth & REST proxies
-│   │   └── api/scout/discover/    # Server-only Scout LLM endpoint (zero key leak)
-│   ├── components/                # Progressive disclosure UI components (Modal, Drawer)
-│   ├── domain/                    # Pure domain models, state machines & invariants
-│   │   ├── bounty.ts              # Bounty lifecycle state machine
-│   │   ├── createBounty.ts        # Stepper validation rules
-│   │   └── scout.ts               # Scout opportunity schema & evidence types
-│   ├── features/                  # UI flows
-│   │   ├── bounties/              # Dashboard, detail views, creation flow
-│   │   └── scout/                 # Scout AI discovery drawer
-│   └── integrations/              # External service adapters
-│       ├── ai/                    # Groq client & bounded repo context collector
-│       ├── canton/                # Canton JSON Ledger API participant adapter
-│       ├── daml/                  # CIP-56 Holding interface decoder & serializers
-│       └── github/                # GitHub App client, checks & PR mapper
-```
+These screenshots illustrate the UI and may predate the latest correctness fixes. They are not independent evidence of live ledger execution.
 
----
+![Scout](docs/screenshots/01_scout_discovery.png)
+![Dashboard](docs/screenshots/02_dashboard_overview.png)
+![Repository selection](docs/screenshots/03_repo_selection.png)
+![Terms](docs/screenshots/04_bounty_terms_criteria.png)
+![Funding](docs/screenshots/05_fund_canton_escrow.png)
+![Lifecycle](docs/screenshots/06_bounty_detail_tracking.png)
+![PR evidence](docs/screenshots/07_pr_ci_evidence.png)
+![Settlement](docs/screenshots/08_canton_settlement_receipt.png)
 
-## License
+## Code map
 
-Apache 2.0. Built for the HackCanton Hackathon.
+- `daml/MergeMint/Token.daml`: holdings, locked bounty, receipt and ledger choices.
+- `src/integrations/canton/server/ledger.ts`: real ledger commands and confirmation.
+- `src/integrations/canton/server/authorization.ts`: sessions, roles, repository access and live SHA checks.
+- `src/domain/reconciliation.ts`: ledger/UI reconciliation without fabricated GitHub evidence.
+- `src/integrations/ai/`: bounded Scout context, Groq and exploratory fallback.
+- `scripts/localnet/`: reproducible loopback LocalNet configuration and bootstrap.
+
+Apache 2.0. Built for HackCanton.

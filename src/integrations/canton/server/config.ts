@@ -26,17 +26,17 @@ export function getCantonConfig(): CantonServerConfig {
   const authToken = process.env.CANTON_AUTH_TOKEN || undefined;
 
   const sponsor: Party = {
-    handle: 'mergemint-labs',
+    handle: process.env.CANTON_SPONSOR_GITHUB_LOGIN || 'mergemint-labs',
     partyId: process.env.CANTON_SPONSOR_PARTY || 'sponsor::1220bce5deccad474f1d1afa5f6af9d028cd4c1922c62903b1a5c4178e67a91f1e3b',
   };
 
   const maintainer: Party = {
-    handle: 'alexmorgan',
+    handle: process.env.CANTON_MAINTAINER_GITHUB_LOGIN || 'alexmorgan',
     partyId: process.env.CANTON_MAINTAINER_PARTY || 'maintainer::1220bce5deccad474f1d1afa5f6af9d028cd4c1922c62903b1a5c4178e67a91f1e3b',
   };
 
   const contributor: Party = {
-    handle: 'juleschen',
+    handle: process.env.CANTON_CONTRIBUTOR_GITHUB_LOGIN || 'juleschen',
     partyId: process.env.CANTON_CONTRIBUTOR_PARTY || 'contributor::1220bce5deccad474f1d1afa5f6af9d028cd4c1922c62903b1a5c4178e67a91f1e3b',
   };
 

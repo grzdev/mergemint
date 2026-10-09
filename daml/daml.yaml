@@ -1,7 +1,7 @@
 sdk-version: 3.5.2
 name: mergemint-bounty
 source: .
-version: 0.2.1
+version: 0.3.0
 dependencies:
   - daml-prim
   - daml-stdlib
@@ -10,3 +10,4 @@ data-dependencies:
   - dars/splice-api-token-holding-v1-1.0.0.dar
 build-options:
   - --target=2.1
+

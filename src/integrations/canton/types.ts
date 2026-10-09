@@ -47,7 +47,8 @@ export interface CantonContract {
   asset: string;
   acceptanceCriteria: string[];
   submissionSha?: string;
-  status: 'FUNDED' | 'CLAIMED' | 'APPROVED' | 'SETTLED';
+  prNumber?: number;
+  status: 'FUNDED' | 'CLAIMED' | 'SUBMITTED' | 'APPROVED' | 'SETTLED';
   createdAt: string;
   tokenHoldingContractId?: string; // Contract ID of the locked or transferred Canton IOU holding
   settledReceipt?: {

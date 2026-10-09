@@ -1,5 +1,6 @@
 import fs from 'node:fs';
 import path from 'node:path';
+import { getGitHubConfig } from '../github/server/config';
 import { getTokenForRepo } from '../github/server/client';
 
 export interface TargetedFileExcerpt {
@@ -43,8 +44,8 @@ export async function gatherRepoContext(
 
   let targetedFiles: TargetedFileExcerpt[] | undefined;
 
-  // 1. Try local filesystem context first if running against mergemint/core or local workspace
-  if (repoFullName.toLowerCase().includes('mergemint') || repoFullName.toLowerCase().includes('core')) {
+  // 1. Use local filesystem context ONLY for the mock demo repo mergemint/core
+  if (getGitHubConfig().mode === 'mock' && repoFullName.trim().toLowerCase() === 'mergemint/core') {
     try {
       const rootDir = process.cwd();
       
@@ -81,8 +82,8 @@ export async function gatherRepoContext(
 
       // Extract bounded excerpts from targeted local files
       const candidateLocalFiles: Array<{ relPath: string; category: TargetedFileExcerpt['category'] }> = [
-        { relPath: 'src/integrations/canton/cantonParticipant.ts', category: 'source' },
-        { relPath: 'src/integrations/daml/cip56.ts', category: 'interface' },
+        { relPath: 'src/integrations/canton/server/ledger.ts', category: 'source' },
+        { relPath: 'src/integrations/canton/server/authorization.ts', category: 'interface' },
         { relPath: 'src/domain/bounty.ts', category: 'validation' },
         { relPath: 'src/integrations/github/github.test.ts', category: 'test' },
         { relPath: 'daml/MergeMint/Token.daml', category: 'source' },
@@ -185,7 +186,7 @@ export async function gatherRepoContext(
                 p.endsWith('.yml')
               );
             })
-            .slice(0, 15);
+            .slice(0, 1000);
 
           // Select up to 4 high-value representative files
           const selectedForFetch = fileCandidates
@@ -249,7 +250,7 @@ export async function gatherRepoContext(
     description = `Repository ${repoFullName}`;
   }
   if (!language) {
-    language = 'TypeScript / JavaScript';
+    language = 'Unknown';
   }
   if (contextSources.length === 0) {
     contextSources.push('fallback:repo_identifier');

@@ -142,7 +142,7 @@ export function validateAndSanitizeGroqOutput(
     if (typeof rawOpp.evidence === 'object' && rawOpp.evidence !== null) {
       const ev = rawOpp.evidence as GroqRawOpportunityEvidence;
       const filePaths = Array.isArray(ev.filePaths)
-        ? ev.filePaths.filter((p): p is string => typeof p === 'string' && Boolean(p.trim())).map(p => p.trim())
+        ? ev.filePaths.filter((p): p is string => typeof p === 'string' && Boolean(p.trim())).map(p => p.trim()).filter(p => contextSources.includes(`github:${p}`) || contextSources.includes(`local:${p}`))
         : [];
       const moduleOrConfig = typeof ev.moduleOrConfig === 'string' ? ev.moduleOrConfig.trim() : undefined;
       const triggerReason = typeof ev.triggerReason === 'string' ? ev.triggerReason.trim() : rationale;
@@ -156,6 +156,10 @@ export function validateAndSanitizeGroqOutput(
       }
     }
 
+    if (!evidence?.filePaths.length) {
+      confidenceLevel = 'Exploratory';
+      evidence = { filePaths: [], triggerReason: 'Model suggestion has no cited file from the inspected context. Maintainer validation required.' };
+    }
     opportunities.push({
       id: `scout-${repo.replace(/[^a-zA-Z0-9-]/g, '-')}-${i + 1}`,
       repo,

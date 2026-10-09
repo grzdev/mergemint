@@ -70,6 +70,12 @@ class DelegatingCantonIntegration implements CantonIntegration {
       : mockCanton.settle(bounty, simulateFailure);
   }
 
+  async settleDetailed(bounty: Bounty, simulateFailure = false): Promise<CantonTransactionResult> {
+    const mode=await this.ensureMode();
+    if (mode !== 'mock') return realCanton.settleDetailed(bounty,simulateFailure);
+    const reference=await mockCanton.settle(bounty,simulateFailure);
+    return {reference,transactionId:reference,contractId:reference,timestamp:new Date().toISOString(),status:'SETTLED'};
+  }
   async getActiveBounties(): Promise<CantonContract[]> {
     const mode = await this.ensureMode();
     return mode !== 'mock' ? realCanton.getActiveBounties() : mockCanton.getActiveBounties();
@@ -81,4 +87,5 @@ class DelegatingCantonIntegration implements CantonIntegration {
   }
 }
 
-export const canton: CantonIntegration = new DelegatingCantonIntegration();
+export const canton = new DelegatingCantonIntegration();
+

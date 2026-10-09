@@ -247,23 +247,13 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, onCan
   };
 
   const handleSelectScoutOpportunity = (opp: ScoutOpportunity) => {
-    const scoutIssue: GitHubIssue = {
-      number: opp.simulatedIssueNumber,
-      title: opp.title,
-      url: `https://github.com/${selectedRepo}/issues/${opp.simulatedIssueNumber}`,
-      author: 'mergemint-scout[bot]',
-      labels: ['scout-discovery', opp.category],
-      comments: 0,
-      updatedAt: opp.createdAt,
-      description: `${opp.description}\n\n**Scout Rationale:** ${opp.rationale}`,
-    };
-
-    setSelectedIssue(scoutIssue);
+    setSelectedIssue(null);
     setAmount(opp.suggestedAmount);
     setCriteria(opp.suggestedCriteria);
-    setAiNote(`Discovered by MergeMint Scout AI (${opp.badge}). Review & edit terms before funding.`);
+    setAiNote('Scout suggested these terms. Select an existing GitHub issue, then review and edit the criteria. Scout has not created an issue.');
     setScoutDrawerOpen(false);
-    setStep(3);
+    setStep(2);
+
   };
 
   // Trigger Scout if opened with initialScout

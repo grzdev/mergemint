@@ -9,6 +9,58 @@ GitHub-native bounty escrow on Canton. A maintainer funds an issue, reviews a co
 - [Hosted Mock Demo / Interactive Preview](https://mergemiint.netlify.app/): simulated GitHub and Canton workflows. It is not proof of live ledger settlement.
 - LocalNet: the real Canton implementation runs locally on `127.0.0.1:7675`. The automated ledger test and signed-in GitHub rehearsal are separate checks; see verification below.
 
+## Product walkthrough
+
+Follow a bounty from discovering useful work to reviewing a contribution and settling its reward. These screenshots illustrate the interface and may predate recent UI fixes; they are not independent proof of live ledger execution.
+
+### 1. Discover work with Scout
+
+Choose a repository and start a scan. Scout presents proposed tasks, source references and suggested acceptance criteria for the maintainer to review. Suggestions remain editable and must be linked to an existing GitHub issue before funding.
+
+![Scout suggestions with evidence and editable acceptance criteria](docs/screenshots/01_scout_discovery.png)
+
+### 2. See the work that needs attention
+
+The Bounties workspace brings together active work, pending reviews and funded amounts. Maintainers can open an individual bounty from the list to take its next action. The screenshot shows the earlier dashboard layout; the current interface consolidates Dashboard and Bounties into one workspace.
+
+![Maintainer workspace with summary cards and the bounty list](docs/screenshots/02_dashboard_overview.png)
+
+### 3. Select the repository and issue
+
+Start bounty creation by choosing a repository, then select an existing open issue. This anchors the work to a concrete GitHub task and establishes which repository the contributor's pull request must belong to.
+
+![Repository selection in the bounty creation flow](docs/screenshots/03_repo_selection.png)
+
+### 4. Define the reward and acceptance criteria
+
+Set the reward in demo MMT and describe what successful delivery means. Review any AI suggestions before continuing: these criteria guide the contributor and support the maintainer's final assessment.
+
+![Bounty reward and acceptance criteria form](docs/screenshots/04_bounty_terms_criteria.png)
+
+### 5. Review the terms and fund the bounty
+
+Check the issue, reward and criteria together before confirming funding. In real LocalNet mode, funding consumes an existing sponsor holding and creates the locked bounty holding on Canton.
+
+![Final terms review before funding the bounty](docs/screenshots/05_fund_canton_escrow.png)
+
+### 6. Track the contribution
+
+The bounty detail view keeps the agreed terms and current lifecycle stage together. After claiming the work, the contributor links a pull request from the same repository so the maintainer can review the submission.
+
+![Bounty detail showing terms and lifecycle progress](docs/screenshots/06_bounty_detail_tracking.png)
+
+### 7. Review the exact PR revision
+
+Inspect the linked pull request, head commit SHA and available CI evidence. Approval is tied to that revision. Before approval and settlement, the server checks GitHub again and rejects the action if it detects a changed head commit.
+
+![Pull request drawer showing commit and CI evidence](docs/screenshots/07_pr_ci_evidence.png)
+
+### 8. Confirm settlement
+
+After maintainer approval, settlement consumes the locked bounty and creates the contributor's MMT holding in one Canton transaction. The receipt identifies the recipient holding and approved revision; the API returns the ledger transaction ID separately from the application's correlation reference.
+
+![Settlement receipt with recipient and ledger references](docs/screenshots/08_canton_settlement_receipt.png)
+
 ## What the implementation does
 
 ### Escrow and settlement
@@ -94,22 +146,9 @@ npm run build
 npm run test:canton-live
 ```
 
-- `npm test`: 57 offline tests, including actual HTTP route handlers with fixture sessions and mocked GitHub/ledger responses. Covers role/origin rejection, fresh-SHA conflict handling, invalid issue rejection, evidence restoration and Scout fallback.
+- `npm test`: 60 offline tests, including actual HTTP route handlers with fixture sessions and mocked GitHub/ledger responses. Covers role/origin rejection, fresh-SHA conflict handling, invalid issue rejection, evidence restoration and Scout fallback.
 - `test:canton-live`: uses the real local participant and new test bounties. Checks funding debit, locked value, unauthorized choices, stale revision rejection, atomic recipient delivery, double-settlement rejection and exact decimal balance conservation. **GitHub evidence in this test is synthetic**; it is not a signed-in GitHub end-to-end test.
 - A final browser rehearsal must independently show real OAuth, a matching real issue/PR, PR/CI retrieval, approval and settlement. Record that rehearsal as the integration demo; the hosted mock preview and unit tests cannot substitute for it.
-
-## Visual walkthrough
-
-These screenshots illustrate the UI and may predate the latest correctness fixes. They are not independent evidence of live ledger execution.
-
-![Scout](docs/screenshots/01_scout_discovery.png)
-![Dashboard](docs/screenshots/02_dashboard_overview.png)
-![Repository selection](docs/screenshots/03_repo_selection.png)
-![Terms](docs/screenshots/04_bounty_terms_criteria.png)
-![Funding](docs/screenshots/05_fund_canton_escrow.png)
-![Lifecycle](docs/screenshots/06_bounty_detail_tracking.png)
-![PR evidence](docs/screenshots/07_pr_ci_evidence.png)
-![Settlement](docs/screenshots/08_canton_settlement_receipt.png)
 
 ## Code map
 

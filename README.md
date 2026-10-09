@@ -6,6 +6,8 @@ GitHub-native bounty escrow on Canton. A maintainer funds an issue, reviews a co
 
 ## Try it
 
+- [Watch the demo video](https://drive.google.com/file/d/1S9vrxP3qWHwuG4gnS6tIV-MR0BiYqmnM/view?usp=sharing).
+
 - [Hosted Mock Demo / Interactive Preview](https://mergemiint.netlify.app/): simulated GitHub and Canton workflows. It is not proof of live ledger settlement.
 - LocalNet: the real Canton implementation runs locally on `127.0.0.1:7675`. The automated ledger test and signed-in GitHub rehearsal are separate checks; see verification below.
 

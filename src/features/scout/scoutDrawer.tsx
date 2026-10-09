@@ -25,12 +25,13 @@ export function ScoutDrawer({
   availableRepos = [],
   onSelectRepo,
   onRunScan,
-  result,
+  result: suppliedResult,
   loading,
   error,
   onRetry,
   onSelectOpportunity,
 }: ScoutDrawerProps) {
+  const result = suppliedResult?.repo === repo ? suppliedResult : null;
   const [expandedCriteriaId, setExpandedCriteriaId] = useState<string | null>(null);
 
   const toggleCriteria = (id: string) => {
@@ -79,9 +80,6 @@ export function ScoutDrawer({
                 onChange={e => {
                   const nextRepo = e.target.value;
                   onSelectRepo?.(nextRepo);
-                  if (nextRepo && onRunScan) {
-                    onRunScan(nextRepo);
-                  }
                 }}
                 disabled={loading}
                 style={{
@@ -448,7 +446,7 @@ export function ScoutDrawer({
           </>
         ) : (
           <div className="empty-inline">
-            Select a repository to run Scout AI analysis.
+            Ready to scan. Click Scan Codebase to analyze the selected repository.
           </div>
         )}
       </div>

@@ -24,7 +24,7 @@ export async function POST() {
 }
 
 export async function GET(request: Request) {
-  const homeUrl = new URL('/', request.url);
+  const homeUrl = new URL('/', process.env.NEXT_PUBLIC_APP_URL || request.url);
   homeUrl.searchParams.set('signed_out', '1');
   const response = NextResponse.redirect(homeUrl.toString());
   return clearSessionCookies(response);

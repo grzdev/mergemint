@@ -627,3 +627,31 @@ test('logout endpoint clears session cookie and revokes auth status', async () =
   assert.equal(getCookie.maxAge, 0);
 });
 
+
+
+test('OAuth success, failure and logout return to the configured app origin', async () => {
+  const oldOrigin = process.env.NEXT_PUBLIC_APP_URL;
+  const oldFetch = global.fetch;
+  process.env.NEXT_PUBLIC_APP_URL = 'http://127.0.0.1:3000';
+  try {
+    const { GET: callback } = await import('@/app/api/github/auth/callback/route');
+    const { GET: logout } = await import('@/app/api/github/auth/logout/route');
+    const { OAUTH_STATE_COOKIE_NAME, SESSION_COOKIE_NAME } = await import('@/integrations/github/server/session');
+    const failure = await callback(new Request('http://localhost:3000/api/github/auth/callback?error=access_denied'));
+    assert.equal(failure.headers.get('location'), 'http://127.0.0.1:3000/?github_error=access_denied');
+    const signedOut = await logout(new Request('http://localhost:3000/api/github/auth/logout'));
+    assert.equal(signedOut.headers.get('location'), 'http://127.0.0.1:3000/?signed_out=1');
+    global.fetch = async input => String(input).includes('/login/oauth/access_token')
+      ? Response.json({ access_token: 'fixture-token' })
+      : Response.json({ login: 'grzdev', avatar_url: '' });
+    const success = await callback(new Request('http://localhost:3000/api/github/auth/callback?code=fixture&state=fixture-state', {
+      headers: { cookie: OAUTH_STATE_COOKIE_NAME + '=fixture-state' },
+    }));
+    assert.equal(success.headers.get('location'), 'http://127.0.0.1:3000/');
+    assert.ok(success.headers.get('set-cookie')?.includes(SESSION_COOKIE_NAME + '='));
+  } finally {
+    global.fetch = oldFetch;
+    if (oldOrigin === undefined) delete process.env.NEXT_PUBLIC_APP_URL;
+    else process.env.NEXT_PUBLIC_APP_URL = oldOrigin;
+  }
+});

@@ -265,12 +265,7 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, initi
     setStep(2);
   };
 
-  // Trigger Scout if opened with initialScout
-  useEffect(() => {
-    if (initialScout && selectedRepo && !scoutResult && !scoutLoading) {
-      handleRunScout(selectedRepo);
-    }
-  }, [initialScout, selectedRepo]);
+  // Opening Scout is passive; the drawer scan button starts analysis.
 
   // Step transitions
   const canContinueFromStep1 = validateRepositorySelection(selectedRepo).valid;
@@ -579,7 +574,7 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, initi
                 <button
                   type="button"
                   className="secondary"
-                  onClick={() => handleRunScout()}
+                  onClick={() => setScoutDrawerOpen(true)}
                   disabled={scoutLoading}
                   style={{
                     padding: '8px 14px',
@@ -699,7 +694,7 @@ export function CreateBountyFlow({ initialRepo, initialScout, initialStep, initi
                 <button
                   type="button"
                   className="primary"
-                  onClick={() => handleRunScout()}
+                  onClick={() => setScoutDrawerOpen(true)}
                   disabled={scoutLoading}
                   style={{ display: 'inline-flex', alignItems: 'center', gap: '6px', padding: '10px 18px', fontSize: '12px' }}
                 >

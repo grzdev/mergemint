@@ -16,7 +16,7 @@ export async function GET(request: Request) {
   const error = url.searchParams.get('error');
 
   const redirectHome = (errCode?: string) => {
-    const homeUrl = new URL('/', request.url);
+    const homeUrl = new URL('/', process.env.NEXT_PUBLIC_APP_URL || request.url);
     if (errCode) {
       homeUrl.searchParams.set('github_error', errCode);
     }

@@ -679,7 +679,7 @@ export function Dashboard() {
           {creating ? (
             <CreateBountyFlow
               initialRepo={
-                scoutRepo ||
+                (scoutOpportunity ? scoutRepo : '') ||
                 (authStatus.mode === 'real'
                   ? (typeof window !== 'undefined' && new URLSearchParams(window.location.search).get('repo')) ||
                     (!isMockRepo(repo) && availableRepos.includes(repo) ? repo : '')
@@ -1593,9 +1593,8 @@ export function Dashboard() {
                       const target = repo !== 'ALL' && !isMockRepo(repo) ? repo : '';
                       setScoutRepo(target);
                       setScoutDrawerOpen(true);
-                      if (target && (!scoutResult || scoutResult.repo !== target)) {
-                        handleRunDashboardScout(target);
-                      }
+                      setScoutError('');
+                      if (scoutResult?.repo !== target) setScoutResult(null);
                     }}
                     style={{
                       display: 'inline-flex',
@@ -1848,9 +1847,8 @@ export function Dashboard() {
                               const target = repo !== 'ALL' && !isMockRepo(repo) ? repo : '';
                               setScoutRepo(target);
                               setScoutDrawerOpen(true);
-                              if (target && (!scoutResult || scoutResult.repo !== target)) {
-                                handleRunDashboardScout(target);
-                              }
+                              setScoutError('');
+                              if (scoutResult?.repo !== target) setScoutResult(null);
                             }}
                             style={{
                               display: 'inline-flex',

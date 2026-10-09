@@ -8,7 +8,7 @@ export async function GET(request: Request) {
   const cfg = getGitHubConfig();
 
   if (!isGitHubConfigured()) {
-    const url = new URL('/', request.url);
+    const url = new URL('/', process.env.NEXT_PUBLIC_APP_URL || request.url);
     url.searchParams.set('github_error', 'config_missing');
     return NextResponse.redirect(url);
   }
